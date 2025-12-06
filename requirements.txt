@@ -17,6 +17,9 @@ pyyaml>=6.0.0
 # Utilities
 python-dateutil>=2.8.0
 
+# Caching (Upstash Redis)
+upstash-redis>=1.0.0
+
 # Testing (dev dependencies - optional)
 pytest>=7.4.0
 pytest-cov>=4.1.0
