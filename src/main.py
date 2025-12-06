@@ -74,8 +74,21 @@ def main() -> int:
                 timeout=config['API_TIMEOUT']
             )
         
-        # Cache manager
-        cache_manager = CacheManager(config['CACHE_DIR'])
+        # Cache manager - use Upstash Redis if configured, otherwise file-based
+        if config.is_upstash_enabled():
+            from src.utils.redis_cache import UpstashCacheManager
+            cache_manager = UpstashCacheManager(
+                rest_url=config['UPSTASH_REDIS_REST_URL'],
+                rest_token=config['UPSTASH_REDIS_REST_TOKEN']
+            )
+            if cache_manager.is_connected():
+                logger.info("Using Upstash Redis for caching")
+            else:
+                logger.warning("Upstash connection failed, falling back to file-based cache")
+                cache_manager = CacheManager(config['CACHE_DIR'])
+        else:
+            cache_manager = CacheManager(config['CACHE_DIR'])
+            logger.info("Using file-based caching")
         
         # Word reader
         word_reader = WordReader(sharepoint_client=sharepoint_client)
@@ -158,6 +171,42 @@ def main() -> int:
             existing_test_cases = []
             logger.info("No existing test cases found (new file)")
         
+        # Step 2.5: Analyze document changes using LLM
+        full_content = word_reader.read_document(config['SOURCE_DOCUMENT_PATH'])
+        previous_content = None
+        change_analysis = None
+        
+        # Try to get previous content from cache
+        if hasattr(cache_manager, 'get_previous_document_content'):
+            previous_content = cache_manager.get_previous_document_content()
+        elif hasattr(cache_manager, 'get_requirements_content'):
+            previous_content = cache_manager.get_requirements_content()
+        
+        if previous_content:
+            logger.info("Previous document version found in cache - analyzing changes...")
+            from src.core.llm_change_analyzer import LLMChangeAnalyzer
+            change_analyzer = LLMChangeAnalyzer(model_client)
+            change_analysis = change_analyzer.analyze_changes(
+                previous_content=previous_content,
+                current_content=full_content
+            )
+            
+            # Log change analysis summary
+            if change_analysis.has_changes:
+                logger.info("=" * 60)
+                logger.info("DOCUMENT CHANGE ANALYSIS")
+                logger.info("=" * 60)
+                logger.info(f"Summary: {change_analysis.summary}")
+                logger.info(f"Changes: Added={change_analysis.added_count}, Modified={change_analysis.modified_count}, Removed={change_analysis.removed_count}")
+                for change in change_analysis.changes:
+                    impact_marker = {"high": "[HIGH]", "medium": "[MED]", "low": "[LOW]"}.get(change.impact, "")
+                    logger.info(f"  - {change.change_type.upper()} {impact_marker}: {change.description}")
+                logger.info("=" * 60)
+            else:
+                logger.info("No significant changes detected in requirements document")
+        else:
+            logger.info("No previous document version in cache - treating all requirements as new")
+        
         # Step 3: Process based on mode
         if config['UPDATE_MODE'] == 'intelligent':
             logger.info("Step 3: Processing requirements intelligently")
@@ -186,8 +235,7 @@ def main() -> int:
             # Traditional workflow
             logger.info("Step 3: Detecting changes in requirements")
             
-            # Get full content for caching
-            full_content = word_reader.read_document(config['SOURCE_DOCUMENT_PATH'])
+            # full_content already read in Step 2.5
             
             # Check if requirements changed
             has_content_changed = cache_manager.has_requirements_changed(full_content)
@@ -245,6 +293,15 @@ def main() -> int:
         )
         
         logger.info(f"Test cases written: {final_stats}")
+        
+        # Update cache with current document content
+        logger.info("Updating document cache...")
+        if hasattr(cache_manager, 'set_document_content'):
+            cache_manager.set_document_content(full_content, requirements)
+        else:
+            cache_manager.set_requirements_content(full_content)
+            cache_manager.set_requirements_hash(cache_manager.compute_hash(full_content))
+        logger.info("Document cached for future change detection")
         
         # Step 7: Generate report
         logger.info("Step 7: Generating report")

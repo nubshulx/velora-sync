@@ -105,6 +105,8 @@ class Config:
             'SHAREPOINT_CLIENT_ID',
             'SHAREPOINT_CLIENT_SECRET',
             'SHAREPOINT_SITE_URL',
+            'UPSTASH_REDIS_REST_URL',
+            'UPSTASH_REDIS_REST_TOKEN',
         ]
         
         for key in optional_keys:
@@ -217,6 +219,12 @@ class Config:
     def is_sharepoint_destination(self) -> bool:
         """Check if destination document is on SharePoint"""
         return 'sharepoint.com' in self._config['DESTINATION_DOCUMENT_PATH'].lower()
+    
+    def is_upstash_enabled(self) -> bool:
+        """Check if Upstash Redis is configured"""
+        url = self._config.get('UPSTASH_REDIS_REST_URL', '')
+        token = self._config.get('UPSTASH_REDIS_REST_TOKEN', '')
+        return bool(url and token)
     
     def get_log_file_path(self) -> Path:
         """Get path for log file"""
