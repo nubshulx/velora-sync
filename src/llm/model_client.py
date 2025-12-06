@@ -18,9 +18,9 @@ class ModelClient:
     def __init__(
         self,
         provider: str = "gemini",
-        model_name: str = "gemini-1.5-pro",
+        model_name: str = "gemini-2.0-flash",
         api_token: Optional[str] = None,
-        max_retries: int = 3,
+        max_retries: int = 5,
         timeout: int = 300,
         **kwargs
     ):
@@ -68,26 +68,27 @@ class ModelClient:
             
             genai.configure(api_key=self.api_token)
             
-            # Normalize model name - the API uses 'models/' prefix
-            # Map common short names to full model names
+            # Normalize model name
+            # The GenerativeModel API accepts model names without 'models/' prefix
             model_mapping = {
-                # Legacy names -> modern equivalents
-                'gemini-pro': 'models/gemini-2.0-flash',
-                'gemini-1.5-pro': 'models/gemini-2.5-pro',
-                'gemini-1.5-flash': 'models/gemini-2.0-flash',
-                'gemini-flash': 'models/gemini-2.0-flash',
-                # Direct full names (without models/ prefix)
-                'gemini-2.0-flash': 'models/gemini-2.0-flash',
-                'gemini-2.5-flash': 'models/gemini-2.5-flash',
-                'gemini-2.5-pro': 'models/gemini-2.5-pro',
-                'gemini-2.0-pro-exp': 'models/gemini-2.0-pro-exp',
+                # Short aliases for convenience
+                'gemini-flash': 'gemini-2.0-flash',
+                'gemini-pro': 'gemini-2.0-flash',  # Map to stable free model
+                # Legacy model names - map to current equivalents
+                'gemini-1.5-pro': 'gemini-2.0-flash',  # 1.5-pro may not be available in v1beta
+                'gemini-1.5-flash': 'gemini-2.0-flash',
+                # Current model names (pass through as-is)
+                'gemini-2.0-flash': 'gemini-2.0-flash',
+                'gemini-2.0-flash-exp': 'gemini-2.0-flash-exp',
+                'gemini-2.5-flash': 'gemini-2.5-flash-preview-05-20',
+                'gemini-2.5-pro': 'gemini-2.5-pro-preview-05-06',
             }
             
-            # Use mapped name or add 'models/' prefix if needed
+            # Use mapped name or use as-is
             if self.model_name in model_mapping:
                 actual_model = model_mapping[self.model_name]
-            elif not self.model_name.startswith('models/'):
-                actual_model = f'models/{self.model_name}'
+            elif self.model_name.startswith('models/'):
+                actual_model = self.model_name[7:]  # Remove 'models/' prefix
             else:
                 actual_model = self.model_name
             logger.info(f"Using Gemini model: {actual_model}")
@@ -172,32 +173,63 @@ class ModelClient:
         temperature: float,
         top_p: float
     ) -> str:
-        """Generate using Google Gemini API"""
-        try:
-            logger.debug(f"Generating with Gemini {self.model_name}")
-            logger.debug(f"Prompt length: {len(prompt)} characters")
-            
-            generation_config = {
-                "max_output_tokens": max_tokens,
-                "temperature": temperature,
-                "top_p": top_p,
-            }
-            
-            response = self.client.generate_content(
-                prompt,
-                generation_config=generation_config
-            )
-            
-            generated_text = response.text
-            
-            logger.debug(f"Generated {len(generated_text)} characters")
-            logger.info("Gemini API call successful (FREE)")
-            
-            return generated_text
-            
-        except Exception as e:
-            logger.error(f"Gemini generation failed: {str(e)}")
-            raise LLMGenerationError(f"Gemini generation failed: {str(e)}")
+        """Generate using Google Gemini API with rate limit handling"""
+        import time
+        import re
+        
+        generation_config = {
+            "max_output_tokens": max_tokens,
+            "temperature": temperature,
+            "top_p": top_p,
+        }
+        
+        last_error = None
+        
+        for attempt in range(self.max_retries):
+            try:
+                logger.debug(f"Generating with Gemini {self.model_name} (attempt {attempt + 1}/{self.max_retries})")
+                logger.debug(f"Prompt length: {len(prompt)} characters")
+                
+                response = self.client.generate_content(
+                    prompt,
+                    generation_config=generation_config
+                )
+                
+                generated_text = response.text
+                
+                logger.debug(f"Generated {len(generated_text)} characters")
+                logger.info("Gemini API call successful (FREE)")
+                
+                return generated_text
+                
+            except Exception as e:
+                last_error = e
+                error_str = str(e)
+                
+                # Check if it's a rate limit error (429)
+                if "429" in error_str or "quota" in error_str.lower() or "rate" in error_str.lower():
+                    # Try to extract retry delay from error message
+                    retry_match = re.search(r'retry in (\d+(?:\.\d+)?)', error_str.lower())
+                    if retry_match:
+                        wait_time = float(retry_match.group(1)) + 1  # Add 1 second buffer
+                    else:
+                        # Exponential backoff: 5s, 10s, 20s
+                        wait_time = 5 * (2 ** attempt)
+                    
+                    if attempt < self.max_retries - 1:
+                        logger.warning(f"Rate limit hit. Waiting {wait_time:.1f}s before retry {attempt + 2}/{self.max_retries}...")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        logger.error(f"Rate limit exceeded after {self.max_retries} attempts")
+                        raise LLMGenerationError(f"Gemini rate limit exceeded after {self.max_retries} retries: {error_str}")
+                else:
+                    # Non-rate-limit error, don't retry
+                    logger.error(f"Gemini generation failed: {error_str}")
+                    raise LLMGenerationError(f"Gemini generation failed: {error_str}")
+        
+        # Should not reach here, but just in case
+        raise LLMGenerationError(f"Gemini generation failed after {self.max_retries} attempts: {str(last_error)}")
     
     def _generate_openai(
         self,

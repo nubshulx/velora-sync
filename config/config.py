@@ -26,7 +26,7 @@ class Config:
     # Default values
     DEFAULTS = {
         'LLM_PROVIDER': 'gemini',  # 'gemini', 'openai', or 'huggingface'
-        'GEMINI_MODEL': 'gemini-pro',  # Stable, widely available across all regions
+        'GEMINI_MODEL': 'gemini-2.0-flash',  # Current stable free model
         'OPENAI_MODEL': 'gpt-4-turbo-preview',
         'LLM_MODEL_NAME': 'google/flan-t5-large',  # For Hugging Face
         'DEVICE': 'auto',
