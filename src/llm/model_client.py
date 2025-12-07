@@ -13,7 +13,7 @@ logger = get_logger(__name__)
 
 
 class ModelClient:
-    """Client for LLM model interactions supporting Gemini, OpenAI, and Hugging Face"""
+    """Client for LLM model interactions supporting Gemini, DeepSeek, OpenAI, and Hugging Face"""
     
     def __init__(
         self,
@@ -45,12 +45,14 @@ class ModelClient:
         
         if self.provider == "gemini":
             self._init_gemini()
+        elif self.provider == "deepseek":
+            self._init_deepseek()
         elif self.provider == "openai":
             self._init_openai()
         elif self.provider == "huggingface":
             self._init_huggingface()
         else:
-            raise ValueError(f"Unsupported provider: {provider}. Use 'gemini', 'openai', or 'huggingface'")
+            raise ValueError(f"Unsupported provider: {provider}. Use 'gemini', 'deepseek', 'openai', or 'huggingface'")
     
     def _init_gemini(self):
         """Initialize Google Gemini client"""
@@ -124,6 +126,35 @@ class ModelClient:
                 "OpenAI package not installed. Install with: pip install openai>=1.0.0"
             )
     
+    def _init_deepseek(self):
+        """Initialize DeepSeek client (uses OpenAI-compatible API)"""
+        try:
+            from openai import OpenAI
+            
+            if not self.api_token:
+                self.api_token = os.getenv('API_TOKEN') or os.getenv('DEEPSEEK_API_KEY')
+            
+            if not self.api_token:
+                raise ValueError(
+                    "DeepSeek API key is required. Set API_TOKEN in .env or pass api_token parameter.\n"
+                    "Get your API key at: https://platform.deepseek.com"
+                )
+            
+            # DeepSeek uses OpenAI-compatible API
+            api_url = os.getenv('API_URL') or "https://api.deepseek.com"
+            
+            self.client = OpenAI(
+                api_key=self.api_token,
+                base_url=api_url,
+                timeout=self.timeout
+            )
+            logger.info(f"DeepSeek client initialized successfully (endpoint: {api_url})")
+            
+        except ImportError:
+            raise ImportError(
+                "OpenAI package not installed. Install with: pip install openai>=1.0.0"
+            )
+    
     def _init_huggingface(self):
         """Initialize Hugging Face client"""
         self.api_url = "https://router.huggingface.co/v1/chat/completions"
@@ -161,7 +192,7 @@ class ModelClient:
         """
         if self.provider == "gemini":
             return self._generate_gemini(prompt, max_tokens, temperature, top_p)
-        elif self.provider == "openai":
+        elif self.provider == "openai" or self.provider == "deepseek":
             return self._generate_openai(prompt, max_tokens, temperature, top_p)
         else:
             return self._generate_huggingface(prompt, max_tokens, temperature, top_p)
