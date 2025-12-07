@@ -15,6 +15,7 @@ import shutil
 from src.utils.exceptions import DocumentReadError, DocumentWriteError
 from src.utils.logger import get_logger
 from src.document_readers.sharepoint_client import SharePointClient
+from src.document_readers.cloud_downloader import CloudFileDownloader
 
 logger = get_logger(__name__)
 
@@ -26,6 +27,7 @@ class ExcelHandler:
         self,
         template: Dict[str, str],
         sharepoint_client: Optional[SharePointClient] = None,
+        cloud_downloader: Optional[CloudFileDownloader] = None,
         create_backup: bool = True
     ):
         """
@@ -33,11 +35,13 @@ class ExcelHandler:
         
         Args:
             template: Test case template dictionary
-            sharepoint_client: Optional SharePoint client
+            sharepoint_client: Optional SharePoint client for authenticated SharePoint
+            cloud_downloader: Optional cloud downloader for public cloud storage
             create_backup: Whether to create backup before updates
         """
         self.template = template
         self.sharepoint_client = sharepoint_client
+        self.cloud_downloader = cloud_downloader or CloudFileDownloader()
         self.create_backup = create_backup
         
         # Add timestamp columns to template
@@ -211,30 +215,45 @@ class ExcelHandler:
     
     def _get_local_path(self, document_path: str, download: bool = False) -> Path:
         """
-        Get local path for document (download from SharePoint if needed)
+        Get local path for document (download from cloud if needed)
         
         Args:
-            document_path: Document path or URL
-            download: Whether to download from SharePoint
+            document_path: Document path or URL (local, SharePoint, OneDrive, Google Drive, Dropbox)
+            download: Whether to download from cloud storage
             
         Returns:
             Local file path
         """
-        is_sharepoint = 'sharepoint.com' in document_path.lower()
+        # Check for authenticated SharePoint (enterprise, not personal)
+        is_sharepoint_auth = (
+            'sharepoint.com' in document_path.lower() and
+            'personal' not in document_path.lower() and
+            self.sharepoint_client is not None
+        )
+        is_cloud_url = self.cloud_downloader.is_cloud_url(document_path)
         
-        if is_sharepoint:
-            if not self.sharepoint_client:
-                raise DocumentReadError("SharePoint client not configured")
-            
-            # Use temporary file for SharePoint documents
+        if is_sharepoint_auth:
+            # Use authenticated SharePoint client
             tmp_path = Path(tempfile.gettempdir()) / "velora_sync_excel.xlsx"
             
             if download:
                 try:
                     self.sharepoint_client.download_file(document_path, tmp_path)
                 except Exception as e:
-                    # File might not exist yet, that's okay
                     logger.debug(f"Could not download Excel from SharePoint: {e}")
+            
+            return tmp_path
+            
+        elif is_cloud_url:
+            # Use cloud downloader for public cloud storage
+            tmp_path = Path(tempfile.gettempdir()) / "velora_sync_excel.xlsx"
+            
+            if download:
+                try:
+                    downloaded = self.cloud_downloader.download_file(document_path, tmp_path)
+                    return downloaded
+                except Exception as e:
+                    logger.debug(f"Could not download Excel from cloud: {e}")
             
             return tmp_path
         else:
