@@ -97,6 +97,7 @@ class RequirementMapper:
     ) -> Dict[str, Any]:
         """
         Analyze how well a requirement is covered by existing test cases
+        Uses fast keyword-based matching (no LLM calls)
         
         Args:
             requirement: Requirement dictionary
@@ -105,50 +106,81 @@ class RequirementMapper:
         Returns:
             Coverage analysis result
         """
-        # Create prompt for LLM analysis
-        prompt = self._create_coverage_analysis_prompt(requirement, existing_test_cases)
+        # Use keyword-based heuristic (fast, no API calls)
+        req_keywords = self._extract_keywords(requirement.get('content', ''))
+        req_keywords |= self._extract_keywords(requirement.get('title', ''))
         
-        # Get LLM analysis
-        try:
-            response = self.model_client.generate(
-                prompt=prompt,
-                max_tokens=800,
-                temperature=0.2  # Lower temperature for more deterministic analysis
-            )
+        matched_test_cases = []
+        for tc in existing_test_cases:
+            tc_keywords = self._extract_keywords(tc.get('Test Case Title', ''))
+            tc_keywords |= self._extract_keywords(tc.get('Description', ''))
             
-            # Parse LLM response
-            analysis = self._parse_coverage_response(response)
-            
-            # Match test cases based on LLM analysis
-            matched_test_cases = []
-            for tc_id in analysis.get('matched_test_case_ids', []):
-                for tc in existing_test_cases:
-                    if tc.get('Test Case ID', '') == tc_id:
-                        matched_test_cases.append(tc)
-                        break
-            
-            return {
-                'requirement': requirement,
-                'matched_test_cases': matched_test_cases,
-                'coverage_status': analysis.get('coverage_status', 'unknown'),
-                'coverage_percentage': analysis.get('coverage_percentage', 0),
-                'missing_scenarios': analysis.get('missing_scenarios', []),
-                'update_needed': analysis.get('update_needed', False),
-                'update_reason': analysis.get('update_reason', '')
-            }
-            
-        except Exception as e:
-            logger.error(f"Failed to analyze coverage: {str(e)}")
-            # Fallback: no coverage
-            return {
-                'requirement': requirement,
-                'matched_test_cases': [],
-                'coverage_status': 'none',
-                'coverage_percentage': 0,
-                'missing_scenarios': [],
-                'update_needed': False,
-                'update_reason': ''
-            }
+            # Check for significant overlap
+            similarity = self._jaccard_similarity(req_keywords, tc_keywords)
+            if similarity >= 0.4:  # 40% keyword overlap = likely covered
+                matched_test_cases.append(tc)
+        
+        # Determine coverage status
+        if len(matched_test_cases) >= 2:
+            coverage_status = 'complete'
+            coverage_percentage = 100
+        elif len(matched_test_cases) == 1:
+            coverage_status = 'partial'
+            coverage_percentage = 50
+        else:
+            coverage_status = 'none'
+            coverage_percentage = 0
+        
+        return {
+            'requirement': requirement,
+            'matched_test_cases': matched_test_cases,
+            'coverage_status': coverage_status,
+            'coverage_percentage': coverage_percentage,
+            'missing_scenarios': [],
+            'update_needed': False,
+            'update_reason': ''
+        }
+    
+    def _extract_keywords(self, text: str) -> set:
+        """Extract significant keywords from text"""
+        import re
+        
+        if not text:
+            return set()
+        
+        # Remove common prefixes
+        prefixes = ['verify', 'test', 'check', 'validate', 'ensure', 'confirm']
+        text_lower = text.strip().lower()
+        for prefix in prefixes:
+            if text_lower.startswith(prefix + ' '):
+                text_lower = text_lower[len(prefix) + 1:]
+                break
+        
+        # Extract words
+        words = re.findall(r'\w+', text_lower)
+        
+        # Stop words to ignore
+        stop_words = {
+            'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+            'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+            'should', 'may', 'might', 'must', 'shall', 'can', 'with', 'for', 'of',
+            'to', 'and', 'or', 'but', 'if', 'then', 'else', 'when', 'where', 'why',
+            'how', 'all', 'each', 'every', 'both', 'few', 'more', 'most', 'other',
+            'some', 'such', 'no', 'nor', 'not', 'only', 'own', 'same', 'so', 'than',
+            'too', 'very', 'just', 'that', 'this', 'these', 'those', 'what', 'which',
+            'who', 'whom', 'after', 'before', 'during', 'on', 'in', 'at', 'by',
+            'user', 'system', 'application', 'page', 'button', 'click', 'enter'
+        }
+        
+        return {w for w in words if w not in stop_words and len(w) > 2}
+    
+    def _jaccard_similarity(self, set1: set, set2: set) -> float:
+        """Calculate Jaccard similarity between two sets"""
+        if not set1 or not set2:
+            return 0.0
+        intersection = len(set1 & set2)
+        union = len(set1 | set2)
+        return intersection / union if union > 0 else 0.0
     
     def _create_coverage_analysis_prompt(
         self,

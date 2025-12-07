@@ -92,32 +92,45 @@ class TestCaseGenerator:
         batch_size: int = 5
     ) -> List[Dict[str, Any]]:
         """
-        Generate test cases from multiple requirements
+        Generate test cases from multiple requirements using TRUE batching
+        (combines multiple requirements into single LLM calls)
         
         Args:
             requirements: List of requirement dictionaries with 'id' and 'content'
-            batch_size: Number of requirements to process together
+            batch_size: Number of requirements to process together in ONE LLM call
             
         Returns:
             List of all generated test cases
         """
         try:
-            logger.info(f"Generating test cases for {len(requirements)} requirements")
+            logger.info(f"Generating test cases for {len(requirements)} requirements (batch_size={batch_size})")
             
             all_test_cases = []
             
-            # Process in batches
+            # Process in true batches - multiple requirements per LLM call
             for i in range(0, len(requirements), batch_size):
                 batch = requirements[i:i + batch_size]
-                logger.debug(f"Processing batch {i//batch_size + 1}")
+                batch_num = i // batch_size + 1
+                total_batches = (len(requirements) + batch_size - 1) // batch_size
+                logger.info(f"Processing batch {batch_num}/{total_batches} ({len(batch)} requirements)")
                 
-                # Generate for each requirement in batch
-                for req in batch:
-                    test_cases = self.generate_from_requirement(
-                        requirement=req['content'],
-                        requirement_id=req['id']
-                    )
-                    all_test_cases.extend(test_cases)
+                # Use batch prompt for TRUE batching
+                prompt = self.prompt_templates.get_batch_generation_prompt(
+                    requirements=batch,
+                    template=self.template
+                )
+                
+                # Single LLM call for entire batch
+                generated_text = self.model_client.generate(
+                    prompt=prompt,
+                    max_tokens=self.max_tokens * len(batch),  # Scale tokens by batch size
+                    temperature=self.temperature
+                )
+                
+                # Parse all test cases from batch response
+                batch_test_cases = self._parse_test_cases(generated_text, batch[0]['id'])
+                all_test_cases.extend(batch_test_cases)
+                logger.info(f"Batch {batch_num} generated {len(batch_test_cases)} test cases")
             
             logger.info(f"Generated total of {len(all_test_cases)} test cases before deduplication")
             

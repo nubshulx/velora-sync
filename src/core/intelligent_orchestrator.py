@@ -76,33 +76,41 @@ class IntelligentTestCaseOrchestrator:
                 mapping_results
             )
             
-            # Step 3: Execute recommendations
-            logger.info("Step 3: Executing recommendations...")
+            # Step 3: Collect requirements to generate
+            logger.info("Step 3: Collecting requirements to process...")
+            requirements_to_create = []
+            requirements_to_update = []
+            
             for rec in recommendations:
                 if rec['action'] == 'create':
-                    # Generate new test cases for uncovered requirements
-                    new_tcs = self.test_case_generator.generate_from_requirement(
-                        requirement=rec['requirement']['content'],
-                        requirement_id=rec['requirement']['id']
-                    )
-                    results['new_test_cases'].extend(new_tcs)
-                    logger.info(f"Created {len(new_tcs)} test cases for {rec['requirement']['id']}")
-                
+                    requirements_to_create.append(rec['requirement'])
                 elif rec['action'] == 'update':
-                    # Update existing test cases based on requirement changes
-                    updated_tcs = self.test_case_generator.generate_from_requirement(
-                        requirement=rec['requirement']['content'],
-                        requirement_id=rec['requirement']['id']
-                    )
-                    results['updated_test_cases'].extend(updated_tcs)
-                    
+                    requirements_to_update.append(rec['requirement'])
                     # Remove old versions from unchanged list
                     old_tc_ids = {tc.get('Test Case ID') for tc in rec['test_cases']}
                     results['unchanged_test_cases'] = [
                         tc for tc in results['unchanged_test_cases']
                         if tc.get('Test Case ID') not in old_tc_ids
                     ]
-                    logger.info(f"Updated test cases for {rec['requirement']['id']}")
+            
+            # Step 4: Generate test cases in batches (fewer API calls)
+            if requirements_to_create:
+                logger.info(f"Generating test cases for {len(requirements_to_create)} uncovered requirements...")
+                new_tcs = self.test_case_generator.generate_from_requirements_batch(
+                    requirements=requirements_to_create,
+                    batch_size=5  # 5 requirements per LLM call
+                )
+                results['new_test_cases'].extend(new_tcs)
+                logger.info(f"Created {len(new_tcs)} test cases")
+            
+            if requirements_to_update:
+                logger.info(f"Updating test cases for {len(requirements_to_update)} changed requirements...")
+                updated_tcs = self.test_case_generator.generate_from_requirements_batch(
+                    requirements=requirements_to_update,
+                    batch_size=5
+                )
+                results['updated_test_cases'].extend(updated_tcs)
+                logger.info(f"Updated {len(updated_tcs)} test cases")
             
             # Compile statistics
             results['statistics'] = {
@@ -151,6 +159,7 @@ class IntelligentTestCaseOrchestrator:
     def get_all_test_cases(self, results: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
         Combine all test cases from processing results, removing duplicates
+        Uses semantic similarity to detect duplicates with different wording
         
         Args:
             results: Results from process_requirements_intelligently
@@ -163,22 +172,114 @@ class IntelligentTestCaseOrchestrator:
         all_test_cases.extend(results.get('updated_test_cases', []))
         all_test_cases.extend(results.get('unchanged_test_cases', []))
         
-        # Remove duplicates based on Test Case Title
-        seen_titles = set()
+        # Remove duplicates using semantic similarity
         unique_test_cases = []
-        for tc in all_test_cases:
-            title = tc.get('Test Case Title', '').strip().lower()
-            if title and title not in seen_titles:
-                seen_titles.add(title)
-                unique_test_cases.append(tc)
-            elif title:
-                logger.debug(f"Removing duplicate test case: {tc.get('Test Case Title')}")
+        duplicates_removed = 0
         
-        if len(unique_test_cases) < len(all_test_cases):
-            logger.info(f"Removed {len(all_test_cases) - len(unique_test_cases)} duplicate test cases")
+        for tc in all_test_cases:
+            title = tc.get('Test Case Title', '')
+            if not title:
+                continue
+            
+            # Check if this test case is similar to any existing unique test case
+            is_duplicate = False
+            for existing_tc in unique_test_cases:
+                existing_title = existing_tc.get('Test Case Title', '')
+                if self._are_titles_similar(title, existing_title):
+                    is_duplicate = True
+                    logger.debug(f"Removing duplicate: '{title}' (similar to '{existing_title}')")
+                    duplicates_removed += 1
+                    break
+            
+            if not is_duplicate:
+                unique_test_cases.append(tc)
+        
+        if duplicates_removed > 0:
+            logger.info(f"Removed {duplicates_removed} duplicate test cases (semantic matching)")
         
         # Re-number test case IDs
         for i, tc in enumerate(unique_test_cases, start=1):
             tc['Test Case ID'] = f"TC-{i:03d}"
         
         return unique_test_cases
+    
+    def _normalize_title_for_comparison(self, title: str) -> set:
+        """
+        Extract significant keywords from title for semantic comparison
+        
+        Args:
+            title: Test case title
+            
+        Returns:
+            Set of significant keywords
+        """
+        import re
+        
+        # Common prefixes to remove (verbs that start test case titles)
+        prefixes = [
+            'verify', 'test', 'check', 'validate', 'ensure', 'confirm',
+            'verify that', 'test that', 'check that', 'ensure that'
+        ]
+        
+        title_lower = title.strip().lower()
+        
+        # Remove common prefixes
+        for prefix in sorted(prefixes, key=len, reverse=True):  # Longer first
+            if title_lower.startswith(prefix + ' '):
+                title_lower = title_lower[len(prefix) + 1:]
+                break
+        
+        # Remove punctuation and split into words
+        words = re.findall(r'\w+', title_lower)
+        
+        # Common stop words to ignore
+        stop_words = {
+            'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been',
+            'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will',
+            'would', 'could', 'should', 'may', 'might', 'must', 'shall',
+            'can', 'with', 'for', 'of', 'to', 'and', 'or', 'but', 'if',
+            'then', 'else', 'when', 'where', 'why', 'how', 'all', 'each',
+            'every', 'both', 'few', 'more', 'most', 'other', 'some', 'such',
+            'no', 'nor', 'not', 'only', 'own', 'same', 'so', 'than', 'too',
+            'very', 'just', 'that', 'this', 'these', 'those', 'what', 'which',
+            'who', 'whom', 'after', 'before', 'during', 'on', 'in', 'at', 'by'
+        }
+        
+        # Extract significant words (not stop words, length > 2)
+        significant_words = {w for w in words if w not in stop_words and len(w) > 2}
+        
+        return significant_words
+    
+    def _are_titles_similar(self, title1: str, title2: str, threshold: float = 0.6) -> bool:
+        """
+        Check if two titles are semantically similar using Jaccard similarity
+        
+        Args:
+            title1: First title
+            title2: Second title
+            threshold: Similarity threshold (0.0 to 1.0)
+            
+        Returns:
+            True if titles are similar, False otherwise
+        """
+        words1 = self._normalize_title_for_comparison(title1)
+        words2 = self._normalize_title_for_comparison(title2)
+        
+        if not words1 or not words2:
+            return False
+        
+        # Jaccard similarity: intersection / union
+        intersection = len(words1 & words2)
+        union = len(words1 | words2)
+        
+        if union == 0:
+            return False
+        
+        similarity = intersection / union
+        
+        # Also check if one is a subset of the other (handles short vs long titles)
+        subset_ratio = intersection / min(len(words1), len(words2)) if min(len(words1), len(words2)) > 0 else 0
+        
+        # Consider similar if Jaccard >= threshold OR if 80%+ of smaller set is covered
+        return similarity >= threshold or subset_ratio >= 0.8
+
