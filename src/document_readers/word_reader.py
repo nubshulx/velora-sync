@@ -12,6 +12,7 @@ import tempfile
 from src.utils.exceptions import DocumentReadError
 from src.utils.logger import get_logger
 from src.document_readers.sharepoint_client import SharePointClient
+from src.document_readers.cloud_downloader import CloudFileDownloader
 
 logger = get_logger(__name__)
 
@@ -21,22 +22,25 @@ class WordReader:
     
     def __init__(
         self,
-        sharepoint_client: Optional[SharePointClient] = None
+        sharepoint_client: Optional[SharePointClient] = None,
+        cloud_downloader: Optional[CloudFileDownloader] = None
     ):
         """
         Initialize Word reader
         
         Args:
-            sharepoint_client: Optional SharePoint client for cloud documents
+            sharepoint_client: Optional SharePoint client for authenticated SharePoint documents
+            cloud_downloader: Optional cloud downloader for public cloud storage links
         """
         self.sharepoint_client = sharepoint_client
+        self.cloud_downloader = cloud_downloader or CloudFileDownloader()
     
     def read_document(self, document_path: str) -> str:
         """
         Read requirements from Word document
         
         Args:
-            document_path: Path to Word document (local or SharePoint URL)
+            document_path: Path to Word document (local, SharePoint, OneDrive, Google Drive, Dropbox)
             
         Returns:
             Extracted text content
@@ -45,24 +49,36 @@ class WordReader:
             DocumentReadError: If reading fails
         """
         try:
-            # Determine if path is SharePoint URL
-            is_sharepoint = 'sharepoint.com' in document_path.lower()
+            # Determine the source type
+            is_sharepoint_authenticated = (
+                'sharepoint.com' in document_path.lower() and 
+                'personal' not in document_path.lower() and
+                self.sharepoint_client is not None
+            )
+            is_cloud_url = self.cloud_downloader.is_cloud_url(document_path)
             
-            if is_sharepoint:
-                if not self.sharepoint_client:
-                    raise DocumentReadError("SharePoint client not configured")
-                
-                # Download to temporary file
+            if is_sharepoint_authenticated:
+                # Use authenticated SharePoint client for enterprise SharePoint
                 with tempfile.NamedTemporaryFile(suffix='.docx', delete=False) as tmp_file:
                     tmp_path = Path(tmp_file.name)
                 
-                logger.info(f"Downloading Word document from SharePoint: {document_path}")
+                logger.info(f"Downloading from SharePoint (authenticated): {document_path}")
                 self.sharepoint_client.download_file(document_path, tmp_path)
                 
                 try:
                     content = self._extract_text(tmp_path)
                 finally:
-                    # Clean up temporary file
+                    if tmp_path.exists():
+                        tmp_path.unlink()
+                        
+            elif is_cloud_url:
+                # Use cloud downloader for public cloud storage links
+                logger.info(f"Downloading from cloud storage: {document_path[:80]}...")
+                tmp_path = self.cloud_downloader.download_file(document_path)
+                
+                try:
+                    content = self._extract_text(tmp_path)
+                finally:
                     if tmp_path.exists():
                         tmp_path.unlink()
             else:
