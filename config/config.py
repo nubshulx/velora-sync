@@ -25,11 +25,13 @@ class Config:
     
     # Default values
     DEFAULTS = {
-        'LLM_PROVIDER': 'gemini',  # 'gemini', 'openai', or 'huggingface'
-        'GEMINI_MODEL': 'gemini-2.0-flash',  # Current stable free model
-        'OPENAI_MODEL': 'gpt-4-turbo-preview',
-        'LLM_MODEL_NAME': 'google/flan-t5-large',  # For Hugging Face
-        'DEVICE': 'auto',
+        # LLM Configuration - unified keys for all providers
+        'LLM_PROVIDER': 'gemini',  # 'gemini', 'deepseek', 'openai', 'huggingface'
+        'LLM_MODEL': 'gemini-2.0-flash',  # Model name for any provider
+        'API_TOKEN': '',  # API key/token for the selected provider
+        'API_URL': '',  # Custom API endpoint (optional, for deepseek/custom providers)
+        
+        # Processing settings
         'UPDATE_MODE': 'intelligent',  # 'new_only', 'full_sync', or 'intelligent'
         'LOG_LEVEL': 'INFO',
         'REPORTS_DIR': './reports',
@@ -98,13 +100,16 @@ class Config:
         
         # Load optional keys
         optional_keys = [
+            # Legacy keys for backward compatibility
             'GEMINI_API_KEY',
             'OPENAI_API_KEY',
             'HUGGINGFACE_API_TOKEN',
+            # SharePoint
             'SHAREPOINT_TENANT_ID',
             'SHAREPOINT_CLIENT_ID',
             'SHAREPOINT_CLIENT_SECRET',
             'SHAREPOINT_SITE_URL',
+            # Redis cache
             'UPSTASH_REDIS_REST_URL',
             'UPSTASH_REDIS_REST_TOKEN',
         ]
@@ -113,6 +118,16 @@ class Config:
             value = os.getenv(key)
             if value:
                 self._config[key] = value
+        
+        # Handle API_TOKEN with fallback to provider-specific keys for backward compatibility
+        if not self._config.get('API_TOKEN'):
+            provider = self._config.get('LLM_PROVIDER', 'gemini').lower()
+            if provider == 'gemini':
+                self._config['API_TOKEN'] = self._config.get('GEMINI_API_KEY', '')
+            elif provider == 'openai':
+                self._config['API_TOKEN'] = self._config.get('OPENAI_API_KEY', '')
+            elif provider == 'huggingface':
+                self._config['API_TOKEN'] = self._config.get('HUGGINGFACE_API_TOKEN', '')
         
         # Load test case template
         template_json = os.getenv('TEST_CASE_TEMPLATE')

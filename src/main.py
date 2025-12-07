@@ -53,11 +53,9 @@ def main() -> int:
         logger.info(f"Update mode: {config['UPDATE_MODE']}")
         logger.info(f"LLM provider: {config['LLM_PROVIDER']}")
         if config['LLM_PROVIDER'] == 'gemini':
-            logger.info(f"Gemini model: {config['GEMINI_MODEL']} (FREE)")
-        elif config['LLM_PROVIDER'] == 'openai':
-            logger.info(f"OpenAI model: {config['OPENAI_MODEL']}")
+            logger.info(f"LLM model: {config['LLM_MODEL']} (FREE)")
         else:
-            logger.info(f"Hugging Face model: {config['LLM_MODEL_NAME']}")
+            logger.info(f"LLM model: {config['LLM_MODEL']}")
         
         # Initialize components
         logger.info("Initializing components...")
@@ -104,30 +102,18 @@ def main() -> int:
         logger.info("Loading LLM model...")
         
         provider = config['LLM_PROVIDER']
-        if provider == 'gemini':
-            model_client = ModelClient(
-                provider='gemini',
-                model_name=config['GEMINI_MODEL'],
-                api_token=config.get('GEMINI_API_KEY'),
-                max_retries=config['MAX_RETRIES'],
-                timeout=config['API_TIMEOUT']
-            )
-        elif provider == 'openai':
-            model_client = ModelClient(
-                provider='openai',
-                model_name=config['OPENAI_MODEL'],
-                api_token=config.get('OPENAI_API_KEY'),
-                max_retries=config['MAX_RETRIES'],
-                timeout=config['API_TIMEOUT']
-            )
-        else:  # huggingface
-            model_client = ModelClient(
-                provider='huggingface',
-                model_name=config['LLM_MODEL_NAME'],
-                api_token=config.get('HUGGINGFACE_API_TOKEN'),
-                max_retries=config['MAX_RETRIES'],
-                timeout=config['API_TIMEOUT']
-            )
+        model_name = config['LLM_MODEL']
+        api_token = config.get('API_TOKEN')
+        
+        logger.info(f"Provider: {provider}, Model: {model_name}")
+        
+        model_client = ModelClient(
+            provider=provider,
+            model_name=model_name,
+            api_token=api_token,
+            max_retries=config['MAX_RETRIES'],
+            timeout=config['API_TIMEOUT']
+        )
         
         # Test case generator
         test_case_generator = TestCaseGenerator(
