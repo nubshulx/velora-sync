@@ -19,6 +19,7 @@ from src.llm.test_case_generator import TestCaseGenerator
 from src.core.change_detector import ChangeDetector
 from src.core.update_strategy import UpdateStrategy
 from src.reporting.report_generator import ReportGenerator
+from src.document_readers.google_drive_client import GoogleDriveClient
 
 
 def main() -> int:
@@ -91,10 +92,31 @@ def main() -> int:
         # Word reader
         word_reader = WordReader(sharepoint_client=sharepoint_client)
         
+        # Google Drive client (if credentials available)
+        google_drive_client = None
+        google_creds_json = os.environ.get('GOOGLE_SERVICE_ACCOUNT_JSON')
+        google_creds_file = os.environ.get('GOOGLE_SERVICE_ACCOUNT_FILE')
+        
+        if google_creds_json or google_creds_file:
+            try:
+                google_drive_client = GoogleDriveClient(
+                    service_account_json=google_creds_json,
+                    service_account_file=google_creds_file
+                )
+                if google_drive_client.is_authenticated():
+                    logger.info("Google Drive client initialized")
+                else:
+                    logger.warning("Google Drive credentials provided but authentication failed")
+                    google_drive_client = None
+            except Exception as e:
+                logger.warning(f"Failed to initialize Google Drive client: {e}")
+                google_drive_client = None
+        
         # Excel handler
         excel_handler = ExcelHandler(
             template=config['TEST_CASE_TEMPLATE'],
             sharepoint_client=sharepoint_client,
+            google_drive_client=google_drive_client,
             create_backup=config['CREATE_BACKUP']
         )
         

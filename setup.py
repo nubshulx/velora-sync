@@ -41,6 +41,10 @@ setup(
         "python-dateutil>=2.8.0",
     ],
     extras_require={
+        "google": [
+            "google-api-python-client>=2.100.0",
+            "google-auth>=2.23.0",
+        ],
         "dev": [
             "pytest>=7.4.0",
             "pytest-cov>=4.1.0",

@@ -16,6 +16,7 @@ from src.utils.exceptions import DocumentReadError, DocumentWriteError
 from src.utils.logger import get_logger
 from src.document_readers.sharepoint_client import SharePointClient
 from src.document_readers.cloud_downloader import CloudFileDownloader
+from src.document_readers.google_drive_client import GoogleDriveClient
 
 logger = get_logger(__name__)
 
@@ -28,6 +29,7 @@ class ExcelHandler:
         template: Dict[str, str],
         sharepoint_client: Optional[SharePointClient] = None,
         cloud_downloader: Optional[CloudFileDownloader] = None,
+        google_drive_client: Optional[GoogleDriveClient] = None,
         create_backup: bool = True
     ):
         """
@@ -37,11 +39,13 @@ class ExcelHandler:
             template: Test case template dictionary
             sharepoint_client: Optional SharePoint client for authenticated SharePoint
             cloud_downloader: Optional cloud downloader for public cloud storage
+            google_drive_client: Optional Google Drive client for authenticated uploads
             create_backup: Whether to create backup before updates
         """
         self.template = template
         self.sharepoint_client = sharepoint_client
         self.cloud_downloader = cloud_downloader or CloudFileDownloader()
+        self.google_drive_client = google_drive_client
         self.create_backup = create_backup
         
         # Add timestamp columns to template
@@ -197,13 +201,52 @@ class ExcelHandler:
             
             logger.info(f"Saved {len(merged_cases)} test cases to Excel")
             
-            # Upload to SharePoint if needed
+            # Handle cloud storage upload
+            is_cloud_url = self.cloud_downloader.is_cloud_url(document_path)
+            is_google_drive = GoogleDriveClient.is_google_drive_url(document_path)
+            
             if 'sharepoint.com' in document_path.lower():
+                # Upload to SharePoint if we have a client configured
                 if not self.sharepoint_client:
                     raise DocumentWriteError("SharePoint client not configured")
                 
                 logger.info("Uploading Excel to SharePoint")
                 self.sharepoint_client.upload_file(local_path, document_path)
+            
+            elif is_google_drive:
+                # Upload to Google Drive if we have a client configured
+                if self.google_drive_client and self.google_drive_client.is_authenticated():
+                    logger.info("Uploading Excel to Google Drive")
+                    self.google_drive_client.upload_file(local_path, document_path)
+                    logger.info("Successfully uploaded to Google Drive!")
+                else:
+                    # Google Drive configured but not authenticated
+                    logger.warning(f"=" * 70)
+                    logger.warning(f"IMPORTANT: Google Drive client not configured")
+                    logger.warning(f"To enable Google Drive uploads:")
+                    logger.warning(f"1. Create a Google Cloud service account")
+                    logger.warning(f"2. Set GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_SERVICE_ACCOUNT_FILE")
+                    logger.warning(f"3. Share your Google Drive file with the service account email")
+                    logger.warning(f"")
+                    logger.warning(f"The test cases have been saved locally to:")
+                    logger.warning(f"  {local_path}")
+                    logger.warning(f"=" * 70)
+                
+            elif is_cloud_url:
+                # OneDrive/Dropbox via sharing links cannot be uploaded to
+                # The sharing link only provides read access
+                provider = self.cloud_downloader.detect_provider(document_path)
+                provider_name = provider.replace('_', ' ').title() if provider else 'cloud storage'
+                
+                logger.warning(f"=" * 70)
+                logger.warning(f"IMPORTANT: Cannot upload to {provider_name} via sharing link")
+                logger.warning(f"Sharing links only provide READ access, not WRITE access.")
+                logger.warning(f"")
+                logger.warning(f"The test cases have been saved locally to:")
+                logger.warning(f"  {local_path}")
+                logger.warning(f"")
+                logger.warning(f"Please manually upload this file to your cloud storage.")
+                logger.warning(f"=" * 70)
             
             return stats
             
@@ -246,16 +289,19 @@ class ExcelHandler:
             
         elif is_cloud_url:
             # Use cloud downloader for public cloud storage
-            tmp_path = Path(tempfile.gettempdir()) / "velora_sync_excel.xlsx"
+            # Save to 'output' folder in current working directory (not temp)
+            output_dir = Path.cwd() / "output"
+            output_dir.mkdir(exist_ok=True)
+            output_path = output_dir / "test_cases.xlsx"
             
             if download:
                 try:
-                    downloaded = self.cloud_downloader.download_file(document_path, tmp_path)
+                    downloaded = self.cloud_downloader.download_file(document_path, output_path)
                     return downloaded
                 except Exception as e:
                     logger.debug(f"Could not download Excel from cloud: {e}")
             
-            return tmp_path
+            return output_path
         else:
             return Path(document_path)
     
