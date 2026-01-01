@@ -289,19 +289,17 @@ class ExcelHandler:
             
         elif is_cloud_url:
             # Use cloud downloader for public cloud storage
-            # Save to 'output' folder in current working directory (not temp)
-            output_dir = Path.cwd() / "output"
-            output_dir.mkdir(exist_ok=True)
-            output_path = output_dir / "test_cases.xlsx"
+            # Save to temp folder (will be uploaded to cloud)
+            tmp_path = Path(tempfile.gettempdir()) / "velora_sync_excel.xlsx"
             
             if download:
                 try:
-                    downloaded = self.cloud_downloader.download_file(document_path, output_path)
+                    downloaded = self.cloud_downloader.download_file(document_path, tmp_path)
                     return downloaded
                 except Exception as e:
                     logger.debug(f"Could not download Excel from cloud: {e}")
             
-            return output_path
+            return tmp_path
         else:
             return Path(document_path)
     
