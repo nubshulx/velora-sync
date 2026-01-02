@@ -1,0 +1,75 @@
+name: Generate Test Cases
+
+on:
+  workflow_dispatch:
+    inputs:
+      update_mode:
+        description: 'Update mode (intelligent, new_only, or full_sync)'
+        required: false
+        default: 'intelligent'
+        type: choice
+        options:
+          - intelligent
+          - new_only
+          - full_sync
+
+jobs:
+  generate-test-cases:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Velora Sync
+        env:
+          # Document paths
+          SOURCE_DOCUMENT_PATH: ${{ secrets.SOURCE_DOCUMENT_PATH }}
+          DESTINATION_DOCUMENT_PATH: ${{ secrets.DESTINATION_DOCUMENT_PATH }}
+          
+          # LLM Configuration
+          LLM_PROVIDER: ${{ secrets.LLM_PROVIDER }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+          API_TOKEN: ${{ secrets.API_TOKEN }}
+          
+          # Processing settings
+          UPDATE_MODE: ${{ github.event.inputs.update_mode || 'intelligent' }}
+          LOG_LEVEL: INFO
+          MAX_TOKENS: 2000
+          TEMPERATURE: 0.1
+          
+          # Redis cache (optional)
+          UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
+          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+          
+          # Google Drive integration
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          
+          # Advanced settings
+          REPORTS_DIR: ./reports
+          CACHE_DIR: ./cache
+          BATCH_SIZE: 2
+          CREATE_BACKUP: true
+          MAX_RETRIES: 3
+          API_TIMEOUT: 300
+        run: |
+          python run.py
+
+      - name: Upload report artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: velora-sync-report
+          path: reports/
+          retention-days: 30
