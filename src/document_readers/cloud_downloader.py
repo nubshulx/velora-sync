@@ -157,13 +157,15 @@ class CloudFileDownloader:
         """
         Convert OneDrive sharing link to direct download URL
         
-        OneDrive public links work by following redirects and extracting
-        the resid parameter to construct a download URL.
+        Uses a combination of methods to find the actual download URL:
+        1. Parse the redirect page for embedded download URLs
+        2. Extract metadata from the page JavaScript
+        3. Use the redir parameter approach for personal links
         """
         try:
             logger.info(f"Converting OneDrive URL: {share_url[:60]}...")
             
-            # Method 1: Follow redirects and get the final view URL
+            # Follow redirects to get the final page
             response = self.session.get(
                 share_url, 
                 allow_redirects=True, 
@@ -172,18 +174,22 @@ class CloudFileDownloader:
             )
             final_url = response.url
             
-            # Get the HTML content to extract download link
+            # Get the HTML content
             content = response.content.decode('utf-8', errors='ignore')
             response.close()
             
             logger.debug(f"OneDrive redirect URL: {final_url[:100]}...")
             
-            # Method 2: Try to find direct download URL in the HTML
-            # Look for download URL patterns in the page
+            # Method 1: Look for direct download URL in page JavaScript/JSON
+            # These patterns are commonly found in OneDrive pages
             download_patterns = [
                 r'"downloadUrl"\s*:\s*"([^"]+)"',
-                r'href="([^"]*download[^"]*)"',
-                r'"url"\s*:\s*"([^"]*\.(?:docx|xlsx|doc|xls)[^"]*)"',
+                r'"@content\.downloadUrl"\s*:\s*"([^"]+)"',
+                r'"mediaDownloadUrl"\s*:\s*"([^"]+)"',
+                r'"directDownloadUrl"\s*:\s*"([^"]+)"',
+                # Look for download link in page
+                r'href="([^"]*download\.aspx[^"]*)"',
+                r'href="([^"]*download\?[^"]*)"',
             ]
             
             for pattern in download_patterns:
@@ -191,11 +197,18 @@ class CloudFileDownloader:
                 if match:
                     download_url = match.group(1)
                     # Unescape URL
-                    download_url = download_url.replace('\\u0026', '&').replace('\\/', '/')
-                    logger.info(f"Found download URL in page")
-                    return download_url
+                    download_url = download_url.replace('\\u0026', '&').replace('\\/', '/').replace('\\u003d', '=')
+                    if download_url.startswith('http'):
+                        logger.info(f"Found download URL in page content")
+                        return download_url
             
-            # Method 3: Extract resid and authkey from URL to construct download
+            # Method 2: For personal OneDrive links, try to construct from final URL
+            # Convert the view URL to a download URL
+            download_url = self._convert_onedrive_to_direct_url(share_url)
+            if download_url:
+                return download_url
+            
+            # Method 3: Extract resid and authkey from the final URL
             resid_match = re.search(r'resid=([^&]+)', final_url)
             authkey_match = re.search(r'authkey=([^&]+)', final_url)
             
@@ -203,7 +216,6 @@ class CloudFileDownloader:
                 resid = resid_match.group(1)
                 authkey = authkey_match.group(1) if authkey_match else ''
                 
-                # Construct the download URL
                 download_url = f"https://onedrive.live.com/download?resid={resid}"
                 if authkey:
                     download_url += f"&authkey={authkey}"
@@ -211,15 +223,28 @@ class CloudFileDownloader:
                 logger.info(f"Constructed download URL from resid")
                 return download_url
             
-            # Method 4: Extract cid and id from URL path
-            # Pattern: /c/{cid}/{id}
-            cid_match = re.search(r'/c/([a-f0-9]+)/([A-Za-z0-9_-]+)', share_url)
-            if cid_match:
-                cid = cid_match.group(1)
-                file_id = cid_match.group(2)
-                download_url = f"https://onedrive.live.com/download?cid={cid}&resid={cid.upper()}!{file_id}"
-                logger.info(f"Constructed download URL from cid/id")
-                return download_url
+            # Method 4: Transform view URL to download URL for personal OneDrive
+            # URL format: onedrive.live.com/personal/{cid}/_layouts/15/Doc.aspx
+            if '/personal/' in final_url and '/_layouts/' in final_url:
+                # Try to use the redir parameter
+                # Personal OneDrive uses a different download mechanism
+                cid_match = re.search(r'/personal/([a-f0-9]+)/', final_url)
+                sourcedoc_match = re.search(r'sourcedoc=%7B([a-f0-9-]+)%7D', final_url, re.IGNORECASE)
+                
+                if cid_match and sourcedoc_match:
+                    cid = cid_match.group(1)
+                    sourcedoc = sourcedoc_match.group(1)
+                    
+                    # Construct the download URL format that works with personal OneDrive
+                    # Using the redir approach - modify the URL to trigger download
+                    download_url = final_url.replace('Doc.aspx', 'download.aspx').replace('action=default', 'action=download')
+                    if '?' in download_url:
+                        download_url += '&download=1'
+                    else:
+                        download_url += '?download=1'
+                    
+                    logger.info(f"Constructed download URL from personal OneDrive URL")
+                    return download_url
             
             # Method 5: Fallback - add download parameter
             if '?' in final_url:
@@ -236,6 +261,83 @@ class CloudFileDownloader:
                 return share_url + '&download=1'
             else:
                 return share_url + '?download=1'
+    
+    def _convert_onedrive_to_direct_url(self, share_url: str) -> Optional[str]:
+        """
+        Convert OneDrive sharing URL to direct download URL.
+        
+        For modern OneDrive personal links, the most reliable method is to:
+        1. Follow redirects to find download URLs in the page
+        2. Use the download=1 parameter
+        3. Try alternative URL patterns
+        """
+        try:
+            # First, try adding download=1 to the original URL
+            # This sometimes triggers a direct download for public links
+            if '?' in share_url:
+                direct_url = share_url + '&download=1'
+            else:
+                direct_url = share_url + '?download=1'
+            
+            # Test if this URL returns a file (not HTML)
+            test_response = self.session.head(
+                direct_url,
+                allow_redirects=True,
+                timeout=self.timeout
+            )
+            
+            content_type = test_response.headers.get('content-type', '')
+            if 'application/' in content_type or content_type.startswith('application/'):
+                # It's a file, not HTML
+                logger.info("download=1 parameter worked on original URL")
+                return direct_url
+            
+            # Follow redirects to get the full URL
+            response = self.session.get(
+                share_url,
+                allow_redirects=True,
+                timeout=self.timeout,
+                stream=True
+            )
+            final_url = response.url
+            content = response.content.decode('utf-8', errors='ignore')
+            response.close()
+            
+            logger.debug(f"OneDrive redirect URL: {final_url}")
+            
+            # Look for downloadUrl in JavaScript/JSON in the page
+            download_patterns = [
+                r'"downloadUrl"\s*:\s*"([^"]+)"',
+                r'"@content\.downloadUrl"\s*:\s*"([^"]+)"',
+                r'"mediaDownloadUrl"\s*:\s*"([^"]+)"',
+                r'"itemUrl"\s*:\s*"([^"]+download[^"]*)"',
+            ]
+            
+            for pattern in download_patterns:
+                match = re.search(pattern, content, re.IGNORECASE)
+                if match:
+                    download_url = match.group(1)
+                    download_url = download_url.replace('\\u0026', '&').replace('\\/', '/')
+                    if download_url.startswith('http'):
+                        logger.info("Found download URL in page content")
+                        return download_url
+            
+            # Try to get eid/resid from final URL
+            resid_match = re.search(r'resid=([^&]+)', final_url)
+            authkey_match = re.search(r'authkey=([^&]+)', final_url)
+            
+            if resid_match:
+                resid = resid_match.group(1)
+                download_url = f"https://onedrive.live.com/download?resid={resid}"
+                if authkey_match:
+                    download_url += f"&authkey={authkey_match.group(1)}"
+                return download_url
+            
+            return None
+            
+        except Exception as e:
+            logger.warning(f"OneDrive URL conversion failed: {e}")
+            return None
     
     def _get_google_drive_download_url(self, share_url: str) -> str:
         """
