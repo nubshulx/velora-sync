@@ -333,21 +333,6 @@ def main() -> int:
         report_generator.save_report(report, report_path)
         logger.info(f"Report saved to {report_path}")
         
-        # Generate GitHub Actions summary (if running in GitHub Actions)
-        if is_github_actions:
-            summary = report_generator.generate_github_summary(
-                changes=changes,
-                test_case_stats=test_case_stats,
-                requirements_processed=requirements_processed
-            )
-            
-            # Write to GitHub Actions summary
-            github_summary_file = os.getenv('GITHUB_STEP_SUMMARY')
-            if github_summary_file:
-                with open(github_summary_file, 'a', encoding='utf-8') as f:
-                    f.write(summary)
-                logger.info("GitHub Actions summary updated")
-        
         logger.info("=" * 80)
         logger.info("VELORA SYNC COMPLETED SUCCESSFULLY")
         logger.info("=" * 80)

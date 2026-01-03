@@ -1,1 +1,0 @@
-"""Document readers package"""

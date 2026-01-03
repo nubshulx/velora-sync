@@ -192,10 +192,10 @@ class ReportGenerator:
         
         summary_parts.append("## Velora Sync Run Summary")
         summary_parts.append("")
-        summary_parts.append(f"✅ Processed {requirements_processed} requirement(s)")
-        summary_parts.append(f"📝 Created {test_case_stats.get('created', 0)} new test case(s)")
-        summary_parts.append(f"🔄 Updated {test_case_stats.get('updated', 0)} test case(s)")
-        summary_parts.append(f"📊 Total test cases: {test_case_stats.get('total', 0)}")
+        summary_parts.append(f"Processed {requirements_processed} requirement(s)")
+        summary_parts.append(f"Created {test_case_stats.get('created', 0)} new test case(s)")
+        summary_parts.append(f"Updated {test_case_stats.get('updated', 0)} test case(s)")
+        summary_parts.append(f"Total test cases: {test_case_stats.get('total', 0)}")
         
         if changes:
             summary_parts.append("")

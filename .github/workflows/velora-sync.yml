@@ -73,3 +73,7 @@ jobs:
           name: velora-sync-report
           path: reports/
           retention-days: 30
+
+      - name: Display report as job summary
+        if: always()
+        run: cat reports/report_*.md >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No report found" >> $GITHUB_STEP_SUMMARY
