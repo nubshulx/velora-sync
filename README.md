@@ -4,7 +4,6 @@
 
 [![GitHub Actions](https://img.shields.io/badge/CI-GitHub%20Actions-blue)](https://github.com/features/actions)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Velora Sync is an automated CI/CD tool that generates and maintains test cases from requirement documents using Large Language Models (LLM). It runs as a GitHub Actions job, intelligently detecting requirement changes and updating test cases accordingly.
 
@@ -83,15 +82,11 @@ Velora Sync is an automated CI/CD tool that generates and maintains test cases f
 ### Basic Configuration (.env)
 
 ```bash
-# ============================================================================
 # REQUIRED: DOCUMENT PATHS
-# ============================================================================
 SOURCE_DOCUMENT_PATH=./sample_documents/requirements.docx
 DESTINATION_DOCUMENT_PATH=./sample_documents/testcases.xlsx
 
-# ============================================================================
 # REQUIRED: LLM CONFIGURATION
-# ============================================================================
 # Provider: 'gemini', 'deepseek', 'openai', or 'huggingface'
 LLM_PROVIDER=gemini
 
@@ -105,30 +100,24 @@ LLM_MODEL=gemini-2.0-flash
 # API key/token for your chosen provider
 API_TOKEN=your_api_key_here
 
-# ============================================================================
 # OPTIONAL: PROCESSING SETTINGS
-# ============================================================================
 UPDATE_MODE=intelligent  # 'intelligent', 'new_only', or 'full_sync'
 LOG_LEVEL=INFO
 MAX_TOKENS=2000
 TEMPERATURE=0.3
 
-# ============================================================================
 # OPTIONAL: UPSTASH REDIS CACHE
-# ============================================================================
 UPSTASH_REDIS_REST_URL=
 UPSTASH_REDIS_REST_TOKEN=
 
-# ============================================================================
 # OPTIONAL: SHAREPOINT CONFIGURATION
-# ============================================================================
 # SHAREPOINT_TENANT_ID=your_tenant_id
 # SHAREPOINT_CLIENT_ID=your_client_id
 # SHAREPOINT_CLIENT_SECRET=your_client_secret
 # SHAREPOINT_SITE_URL=https://yourcompany.sharepoint.com/sites/yoursite
 ```
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -160,7 +149,7 @@ UPSTASH_REDIS_REST_TOKEN=
                                            └───────────────────┘
 ```
 
-## 📂 Project Structure
+## Project Structure
 
 ```
 velora-sync/
@@ -266,8 +255,3 @@ After each run, Velora Sync generates:
 3. **Log Files** (`reports/velora_sync_*.log`)
    - Detailed execution logs
    - Debug information
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
