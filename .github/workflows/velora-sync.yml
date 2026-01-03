@@ -76,4 +76,4 @@ jobs:
 
       - name: Display report as job summary
         if: always()
-        run: cat reports/velora_sync_report_*.md >> $GITHUB_STEP_SUMMARY
+        run: cat reports/report_*.md >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No report found" >> $GITHUB_STEP_SUMMARY
