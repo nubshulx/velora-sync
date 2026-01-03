@@ -66,6 +66,13 @@ jobs:
         run: |
           python run.py
 
+      - name: Display report as job summary
+        if: always()
+        run: |
+          if [ -f reports/velora_sync_report_*.md ]; then
+            cat reports/velora_sync_report_*.md >> $GITHUB_STEP_SUMMARY
+          fi
+
       - name: Upload report artifact
         uses: actions/upload-artifact@v4
         if: always()
