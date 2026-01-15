@@ -105,28 +105,49 @@ NOW GENERATE THE TEST CASES:
             for i, req in enumerate(requirements)
         ])
         
-        prompt = f"""You are a QA expert generating test cases from multiple software requirements.
+        prompt = f"""You are a senior QA engineer creating comprehensive, detailed test cases.
 
-REQUIREMENTS:
+REQUIREMENTS TO TEST:
 {req_text}
 
-TASK:
-Generate comprehensive test cases for ALL the above requirements.
+YOUR TASK:
+Generate 3-5 UNIQUE test cases for EACH requirement above. Each test case must test a DIFFERENT scenario.
 
-OUTPUT FORMAT:
-For each test case, provide:
-{chr(10).join(f"- {field}: <value>" for field in fields)}
+STRICT OUTPUT FORMAT (MUST FOLLOW EXACTLY):
+1. Separate each test case with exactly: ---TEST_CASE---
+2. Each field MUST be on its OWN LINE with the exact field name followed by colon
+3. NO markdown formatting (no ** or # or bullets)
 
-Separate each test case with "---TEST_CASE---".
+REQUIRED FIELDS FOR EACH TEST CASE:
+{chr(10).join(f"{field}: <your value here>" for field in fields)}
 
-GUIDELINES:
-1. Generate 3-5 test cases per requirement
-2. Cover positive, negative, and edge cases
-3. Be specific in test steps and expected results
-4. Reference the correct requirement ID for each test case
-5. Ensure test case IDs are unique and sequential
+EXAMPLE OF CORRECT FORMAT:
+---TEST_CASE---
+Test Case ID: TC-001
+Test Case Title: Verify user login with valid credentials
+Test Case Description: Validate that users can successfully log in with correct credentials
+Preconditions: User account exists in the system
+Test Steps: 1. Navigate to login page
+2. Enter valid username 'testuser@example.com'
+3. Enter valid password 'TestPass123'
+4. Click the Login button
+5. Verify dashboard is displayed
+Expected Results: User is logged in and redirected to dashboard
+Priority: High
+Test Type: Functional
+---TEST_CASE---
+Test Case ID: TC-002
+Test Case Title: Verify error message for invalid password
+...
 
-TEST CASES:
+CRITICAL RULES:
+1. ALWAYS use the exact field names shown above (e.g., "Test Case Title:" not "Title:")
+2. Each test case MUST have ALL fields
+3. Test Steps should be numbered (1. 2. 3. etc.) on separate lines
+4. Generate 3-5 test cases per requirement covering: positive, negative, edge cases
+5. Make test cases UNIQUE - don't repeat the same scenario
+
+NOW GENERATE THE TEST CASES:
 """
         return prompt
     

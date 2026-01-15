@@ -121,9 +121,11 @@ class TestCaseGenerator:
                 )
                 
                 # Single LLM call for entire batch
+                # Cap max_tokens to 8192 (API limit for most providers)
+                batch_tokens = min(self.max_tokens * len(batch), 8192)
                 generated_text = self.model_client.generate(
                     prompt=prompt,
-                    max_tokens=self.max_tokens * len(batch),  # Scale tokens by batch size
+                    max_tokens=batch_tokens,
                     temperature=self.temperature
                 )
                 
@@ -307,9 +309,11 @@ class TestCaseGenerator:
             )
             
             # Generate updates
+            # Cap max_tokens to 8192 (API limit for most providers)
+            update_tokens = min(self.max_tokens * 2, 8192)
             generated_text = self.model_client.generate(
                 prompt=prompt,
-                max_tokens=self.max_tokens * 2,  # More tokens for updates
+                max_tokens=update_tokens,
                 temperature=self.temperature
             )
             

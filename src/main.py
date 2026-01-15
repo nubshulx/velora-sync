@@ -179,41 +179,53 @@ def main() -> int:
             existing_test_cases = []
             logger.info("No existing test cases found (new file)")
         
-        # Step 2.5: Analyze document changes using LLM
+        # Step 2.5: Analyze document changes
         full_content = word_reader.read_document(config['SOURCE_DOCUMENT_PATH'])
         previous_content = None
         change_analysis = None
         
-        # Try to get previous content from cache
-        if hasattr(cache_manager, 'get_previous_document_content'):
-            previous_content = cache_manager.get_previous_document_content()
-        elif hasattr(cache_manager, 'get_requirements_content'):
-            previous_content = cache_manager.get_requirements_content()
+        # First, check if document has changed using hash (fast check)
+        has_hash_changed = cache_manager.has_requirements_changed(full_content)
         
-        if previous_content:
-            logger.info("Previous document version found in cache - analyzing changes...")
-            from src.core.llm_change_analyzer import LLMChangeAnalyzer
-            change_analyzer = LLMChangeAnalyzer(model_client)
-            change_analysis = change_analyzer.analyze_changes(
-                previous_content=previous_content,
-                current_content=full_content
+        if not has_hash_changed:
+            # Hash is identical - no need to call LLM, document hasn't changed at all
+            logger.info("Document hash unchanged - skipping change analysis")
+            from src.core.llm_change_analyzer import ChangeAnalysis
+            change_analysis = ChangeAnalysis(
+                has_changes=False,
+                summary="Document unchanged (hash match)"
             )
-            
-            # Log change analysis summary
-            if change_analysis.has_changes:
-                logger.info("=" * 60)
-                logger.info("DOCUMENT CHANGE ANALYSIS")
-                logger.info("=" * 60)
-                logger.info(f"Summary: {change_analysis.summary}")
-                logger.info(f"Changes: Added={change_analysis.added_count}, Modified={change_analysis.modified_count}, Removed={change_analysis.removed_count}")
-                for change in change_analysis.changes:
-                    impact_marker = {"high": "[HIGH]", "medium": "[MED]", "low": "[LOW]"}.get(change.impact, "")
-                    logger.info(f"  - {change.change_type.upper()} {impact_marker}: {change.description}")
-                logger.info("=" * 60)
-            else:
-                logger.info("No significant changes detected in requirements document")
         else:
-            logger.info("No previous document version in cache - treating all requirements as new")
+            # Hash changed - try to get previous content for semantic analysis
+            if hasattr(cache_manager, 'get_previous_document_content'):
+                previous_content = cache_manager.get_previous_document_content()
+            elif hasattr(cache_manager, 'get_requirements_content'):
+                previous_content = cache_manager.get_requirements_content()
+            
+            if previous_content:
+                logger.info("Document hash changed - analyzing changes using LLM...")
+                from src.core.llm_change_analyzer import LLMChangeAnalyzer
+                change_analyzer = LLMChangeAnalyzer(model_client)
+                change_analysis = change_analyzer.analyze_changes(
+                    previous_content=previous_content,
+                    current_content=full_content
+                )
+                
+                # Log change analysis summary
+                if change_analysis.has_changes:
+                    logger.info("=" * 60)
+                    logger.info("DOCUMENT CHANGE ANALYSIS")
+                    logger.info("=" * 60)
+                    logger.info(f"Summary: {change_analysis.summary}")
+                    logger.info(f"Changes: Added={change_analysis.added_count}, Modified={change_analysis.modified_count}, Removed={change_analysis.removed_count}")
+                    for change in change_analysis.changes:
+                        impact_marker = {"high": "[HIGH]", "medium": "[MED]", "low": "[LOW]"}.get(change.impact, "")
+                        logger.info(f"  - {change.change_type.upper()} {impact_marker}: {change.description}")
+                    logger.info("=" * 60)
+                else:
+                    logger.info("No significant changes detected in requirements document")
+            else:
+                logger.info("No previous document version in cache - treating all requirements as new")
         
         # Step 3: Process based on mode
         if config['UPDATE_MODE'] == 'intelligent':

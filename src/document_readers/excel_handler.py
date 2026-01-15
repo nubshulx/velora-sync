@@ -354,44 +354,71 @@ class ExcelHandler:
             # Only add new test cases, preserve existing ones
             merged = existing.copy()
             
-            # Create index of existing test cases by ID
+            # Create index of existing test cases by TITLE (more reliable than ID)
+            # because LLM generates new IDs that won't match existing ones
+            existing_titles = {
+                tc.get('Test Case Title', '').strip().lower(): tc 
+                for tc in existing 
+                if tc.get('Test Case Title')
+            }
+            
+            # Also keep track of existing IDs for ID-based matching
             existing_ids = {tc.get('Test Case ID', ''): tc for tc in existing}
             
+            added_count = 0
             for test_case in new:
+                tc_title = test_case.get('Test Case Title', '').strip().lower()
                 tc_id = test_case.get('Test Case ID', '')
-                if tc_id not in existing_ids:
-                    # New test case
+                
+                # Check if this test case already exists (by title or ID)
+                is_duplicate = (
+                    (tc_title and tc_title in existing_titles) or
+                    (tc_id and tc_id in existing_ids)
+                )
+                
+                if not is_duplicate:
+                    # New test case - assign next available ID
+                    next_id = len(merged) + 1
+                    test_case['Test Case ID'] = f"TC-{next_id:03d}"
                     test_case['Created'] = current_time
                     test_case['Updated'] = current_time
                     merged.append(test_case)
-                    stats['created'] += 1
-                else:
-                    stats['unchanged'] += 1
+                    added_count += 1
+            
+            stats['created'] = added_count
+            stats['unchanged'] = len(existing)
             
         elif mode == 'full_sync':
             # Update existing and add new test cases
             merged = []
             
-            # Create index of existing test cases by ID
-            existing_ids = {tc.get('Test Case ID', ''): tc for tc in existing}
+            # Create index of existing test cases by title for matching
+            existing_by_title = {
+                tc.get('Test Case Title', '').strip().lower(): tc 
+                for tc in existing 
+                if tc.get('Test Case Title')
+            }
+            existing_titles_processed = set()
             
             for test_case in new:
-                tc_id = test_case.get('Test Case ID', '')
+                tc_title = test_case.get('Test Case Title', '').strip().lower()
                 
-                if tc_id in existing_ids:
-                    # Update existing test case
-                    existing_tc = existing_ids[tc_id]
+                if tc_title and tc_title in existing_by_title:
+                    # Found matching existing test case
+                    existing_tc = existing_by_title[tc_title]
+                    existing_titles_processed.add(tc_title)
                     
-                    # Check if content changed
+                    # Check if content changed (excluding ID, Created, Updated)
                     content_changed = False
                     for key in test_case:
-                        if key not in ['Created', 'Updated']:
+                        if key not in ['Test Case ID', 'Created', 'Updated']:
                             if test_case.get(key) != existing_tc.get(key):
                                 content_changed = True
                                 break
                     
                     if content_changed:
-                        # Preserve Created timestamp, update Updated
+                        # Preserve original ID and Created timestamp
+                        test_case['Test Case ID'] = existing_tc.get('Test Case ID', f"TC-{len(merged)+1:03d}")
                         test_case['Created'] = existing_tc.get('Created', current_time)
                         test_case['Updated'] = current_time
                         merged.append(test_case)
@@ -400,20 +427,24 @@ class ExcelHandler:
                         # No changes, keep existing
                         merged.append(existing_tc)
                         stats['unchanged'] += 1
-                    
-                    # Remove from index
-                    del existing_ids[tc_id]
                 else:
                     # New test case
+                    test_case['Test Case ID'] = f"TC-{len(merged)+1:03d}"
                     test_case['Created'] = current_time
                     test_case['Updated'] = current_time
                     merged.append(test_case)
                     stats['created'] += 1
             
-            # Add remaining existing test cases that weren't in new list
-            for existing_tc in existing_ids.values():
-                merged.append(existing_tc)
-                stats['unchanged'] += 1
+            # Add remaining existing test cases that weren't matched
+            for tc in existing:
+                tc_title = tc.get('Test Case Title', '').strip().lower()
+                if tc_title and tc_title not in existing_titles_processed:
+                    merged.append(tc)
+                    stats['unchanged'] += 1
+                elif not tc_title:
+                    # No title - keep it
+                    merged.append(tc)
+                    stats['unchanged'] += 1
         
         else:
             raise ValueError(f"Invalid mode: {mode}")
