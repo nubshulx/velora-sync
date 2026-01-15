@@ -360,7 +360,8 @@ def main() -> int:
             test_case_stats=test_case_stats,
             requirements_processed=requirements_processed,
             errors=errors,
-            warnings=warnings
+            warnings=warnings,
+            change_analysis=change_analysis
         )
         
         # Save report
