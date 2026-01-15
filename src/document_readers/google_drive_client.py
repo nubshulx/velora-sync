@@ -165,7 +165,7 @@ class GoogleDriveClient:
             file_name = file_metadata.get('name', 'downloaded_file')
             mime_type = file_metadata.get('mimeType', '')
             
-            logger.info(f"Downloading {file_name} from Google Drive")
+            logger.info(f"Downloading {file_name} from Google Drive (mimeType: {mime_type})")
             
             # Create local path if not provided
             if local_path is None:
@@ -174,21 +174,28 @@ class GoogleDriveClient:
                 local_path = Path(temp_file.name)
                 temp_file.close()
             
-            # Handle Google Workspace files (Sheets, Docs) - export as Office format
-            if 'spreadsheet' in mime_type:
-                # Export Google Sheets as Excel
+            # Handle native Google Workspace files (Sheets, Docs) - export as Office format
+            # These have mimeType like 'application/vnd.google-apps.spreadsheet'
+            if mime_type == 'application/vnd.google-apps.spreadsheet':
+                # Export native Google Sheets as Excel
+                logger.info("Exporting native Google Sheets as Excel format")
                 request = self.service.files().export_media(
                     fileId=file_id,
                     mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 )
-            elif 'document' in mime_type:
-                # Export Google Docs as Word
+            elif mime_type == 'application/vnd.google-apps.document':
+                # Export native Google Docs as Word
+                logger.info("Exporting native Google Docs as Word format")
                 request = self.service.files().export_media(
                     fileId=file_id,
                     mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
                 )
             else:
-                # Regular file download
+                # Regular file download (uploaded Excel, Word, etc.)
+                # This includes mimeTypes like:
+                # - 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' (Excel .xlsx)
+                # - 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' (Word .docx)
+                logger.info("Downloading uploaded file directly")
                 request = self.service.files().get_media(fileId=file_id)
             
             # Download the file

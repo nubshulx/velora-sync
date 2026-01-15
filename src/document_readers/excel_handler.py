@@ -273,6 +273,10 @@ class ExcelHandler:
             'personal' not in document_path.lower() and
             self.sharepoint_client is not None
         )
+        
+        # Check for Google Drive URLs - use authenticated client if available
+        is_google_drive = GoogleDriveClient.is_google_drive_url(document_path)
+        
         is_cloud_url = self.cloud_downloader.is_cloud_url(document_path)
         
         if is_sharepoint_auth:
@@ -286,9 +290,32 @@ class ExcelHandler:
                     logger.debug(f"Could not download Excel from SharePoint: {e}")
             
             return tmp_path
+        
+        elif is_google_drive:
+            # Use authenticated Google Drive client if available
+            tmp_path = Path(tempfile.gettempdir()) / "velora_sync_excel.xlsx"
+            
+            if download:
+                if self.google_drive_client and self.google_drive_client.is_authenticated():
+                    try:
+                        downloaded = self.google_drive_client.download_file(document_path, tmp_path)
+                        logger.info(f"Downloaded Excel from Google Drive using authenticated client")
+                        return downloaded
+                    except Exception as e:
+                        logger.warning(f"Could not download Excel from Google Drive: {e}")
+                else:
+                    # Fall back to public download (may not work for private files)
+                    logger.warning("Google Drive client not authenticated, trying public download...")
+                    try:
+                        downloaded = self.cloud_downloader.download_file(document_path, tmp_path)
+                        return downloaded
+                    except Exception as e:
+                        logger.warning(f"Could not download Excel from Google Drive (public): {e}")
+            
+            return tmp_path
             
         elif is_cloud_url:
-            # Use cloud downloader for public cloud storage
+            # Use cloud downloader for public cloud storage (OneDrive, Dropbox, etc.)
             # Save to temp folder (will be uploaded to cloud)
             tmp_path = Path(tempfile.gettempdir()) / "velora_sync_excel.xlsx"
             
