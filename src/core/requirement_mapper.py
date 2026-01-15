@@ -1,6 +1,5 @@
 """
 Intelligent requirement-to-test-case mapper using LLM
-Solves the "requirement drift" problem for unstructured documents
 """
 
 from typing import List, Dict, Any, Tuple
@@ -96,8 +95,7 @@ class RequirementMapper:
         existing_test_cases: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
         """
-        Analyze how well a requirement is covered by existing test cases
-        Uses fast keyword-based matching (no LLM calls)
+        Analyze how well a requirement is covered by existing test cases (no LLM calls)
         
         Args:
             requirement: Requirement dictionary

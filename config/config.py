@@ -25,7 +25,7 @@ class Config:
     
     # Default values
     DEFAULTS = {
-        # LLM Configuration - unified keys for all providers
+        # LLM Configuration
         'LLM_PROVIDER': 'gemini',  # 'gemini', 'deepseek', 'openai', 'huggingface'
         'LLM_MODEL': 'gemini-2.0-flash',  # Model name for any provider
         'API_TOKEN': '',  # API key/token for the selected provider
@@ -44,7 +44,7 @@ class Config:
         'API_TIMEOUT': 300,
     }
     
-    # Default test case template (Requirement ID removed as per user feedback)
+    # Default test case template
     DEFAULT_TEMPLATE = {
         "Test Case ID": "TC001",
         "Test Case Title": "Sample test case",
@@ -58,12 +58,7 @@ class Config:
     }
     
     def __init__(self, env_file: Optional[Path] = None):
-        """
-        Initialize configuration
-        
-        Args:
-            env_file: Path to .env file (defaults to .env in current directory)
-        """
+        """Initialize configuration"""
         # Load environment variables
         if env_file:
             load_dotenv(env_file)

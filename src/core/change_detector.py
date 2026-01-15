@@ -23,8 +23,7 @@ class Change:
 
 
 class ChangeDetector:
-    """Detects changes in requirements between runs"""
-    
+
     def __init__(self, cache_manager: CacheManager):
         """
         Initialize change detector
@@ -159,10 +158,8 @@ class ChangeDetector:
     ) -> List[Change]:
         """
         Treat all requirements as new
-        
         Args:
             requirements: List of requirements
-            
         Returns:
             List of changes marking all as added
         """
@@ -181,10 +178,8 @@ class ChangeDetector:
     def _parse_cached_requirements(self, cached_content: str) -> List[Dict[str, str]]:
         """
         Parse cached requirements content
-        
         Args:
             cached_content: Cached text content
-            
         Returns:
             List of requirement dictionaries
         """
@@ -199,10 +194,8 @@ class ChangeDetector:
     def get_change_summary(self, changes: List[Change]) -> Dict[str, any]:
         """
         Get summary statistics of changes
-        
         Args:
             changes: List of changes
-            
         Returns:
             Dictionary with change statistics
         """
