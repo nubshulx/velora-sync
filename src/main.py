@@ -217,27 +217,45 @@ def main() -> int:
         
         # Step 3: Process based on mode
         if config['UPDATE_MODE'] == 'intelligent':
-            logger.info("Step 3: Processing requirements intelligently")
-            
-            # Use intelligent orchestrator
-            processing_results = orchestrator.process_requirements_intelligently(
-                requirement_sections=requirements,
-                existing_test_cases=existing_test_cases,
-                mode='intelligent'
+            # Check if we should skip processing (no changes and test cases exist)
+            should_skip = (
+                change_analysis is not None and 
+                not change_analysis.has_changes and 
+                len(existing_test_cases) > 0
             )
             
-            # Get all test cases
-            all_test_cases = orchestrator.get_all_test_cases(processing_results)
-            
-            # Extract statistics
-            test_case_stats = {
-                'created': processing_results['statistics'].get('new_test_cases_created', 0),
-                'updated': processing_results['statistics'].get('test_cases_updated', 0),
-                'unchanged': processing_results['statistics'].get('test_cases_unchanged', 0),
-                'total': len(all_test_cases)
-            }
-            
-            changes = []  # Intelligent mode handles this internally
+            if should_skip:
+                logger.info("Step 3: Skipping processing (no changes detected and test cases exist)")
+                all_test_cases = existing_test_cases
+                test_case_stats = {
+                    'created': 0,
+                    'updated': 0,
+                    'unchanged': len(existing_test_cases),
+                    'total': len(existing_test_cases)
+                }
+                changes = []
+            else:
+                logger.info("Step 3: Processing requirements intelligently")
+                
+                # Use intelligent orchestrator
+                processing_results = orchestrator.process_requirements_intelligently(
+                    requirement_sections=requirements,
+                    existing_test_cases=existing_test_cases,
+                    mode='intelligent'
+                )
+                
+                # Get all test cases
+                all_test_cases = orchestrator.get_all_test_cases(processing_results)
+                
+                # Extract statistics
+                test_case_stats = {
+                    'created': processing_results['statistics'].get('new_test_cases_created', 0),
+                    'updated': processing_results['statistics'].get('test_cases_updated', 0),
+                    'unchanged': processing_results['statistics'].get('test_cases_unchanged', 0),
+                    'total': len(all_test_cases)
+                }
+                
+                changes = []  # Intelligent mode handles this internally
             
         else:
             # Traditional workflow
@@ -292,15 +310,20 @@ def main() -> int:
                 test_case_stats['total'] = len(existing_test_cases)
                 test_case_stats['unchanged'] = len(existing_test_cases)
         
-        # Step 6: Write test cases to Excel
-        logger.info("Step 6: Writing test cases to Excel")
-        final_stats = excel_handler.write_test_cases(
-            document_path=config['DESTINATION_DOCUMENT_PATH'],
-            test_cases=all_test_cases,
-            mode=config['UPDATE_MODE'] if config['UPDATE_MODE'] != 'intelligent' else 'new_only'
-        )
+        # Step 6: Write test cases to Excel (skip if no changes)
+        has_test_case_changes = test_case_stats.get('created', 0) > 0 or test_case_stats.get('updated', 0) > 0
         
-        logger.info(f"Test cases written: {final_stats}")
+        if has_test_case_changes:
+            logger.info("Step 6: Writing test cases to Excel")
+            final_stats = excel_handler.write_test_cases(
+                document_path=config['DESTINATION_DOCUMENT_PATH'],
+                test_cases=all_test_cases,
+                mode=config['UPDATE_MODE'] if config['UPDATE_MODE'] != 'intelligent' else 'new_only'
+            )
+            logger.info(f"Test cases written: {final_stats}")
+        else:
+            logger.info("Step 6: Skipped (no changes to write)")
+            final_stats = test_case_stats
         
         # Update cache with current document content
         logger.info("Updating document cache...")
