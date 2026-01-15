@@ -1,6 +1,5 @@
 """
 LLM model client for test case generation
-Supports Google Gemini, OpenAI GPT-4, and Hugging Face models
 """
 
 from typing import Optional
@@ -13,8 +12,7 @@ logger = get_logger(__name__)
 
 
 class ModelClient:
-    """Client for LLM model interactions supporting Gemini, DeepSeek, OpenAI, and Hugging Face"""
-    
+
     def __init__(
         self,
         provider: str = "gemini",
@@ -24,16 +22,8 @@ class ModelClient:
         timeout: int = 300,
         **kwargs
     ):
-        """
-        Initialize model client
-        
-        Args:
-            provider: 'gemini', 'openai', or 'huggingface'
-            model_name: Model name
-            api_token: API token/key
-            max_retries: Maximum retry attempts
-            timeout: Timeout for API calls in seconds
-        """
+
+        # Initialize model client
         self.provider = provider.lower()
         self.model_name = model_name
         self.api_token = api_token
@@ -64,14 +54,12 @@ class ModelClient:
             
             if not self.api_token:
                 raise ValueError(
-                    "Gemini API key is required. Set GEMINI_API_KEY in .env or pass api_token parameter.\n"
-                    "Get your FREE API key at: https://makersuite.google.com/app/apikey"
+                    "Gemini API key is required. Set GEMINI_API_KEY in .env"
                 )
             
             genai.configure(api_key=self.api_token)
             
             # Normalize model name
-            # The GenerativeModel API accepts model names without 'models/' prefix
             model_mapping = {
                 # Short aliases for convenience
                 'gemini-flash': 'gemini-2.0-flash',
@@ -114,8 +102,7 @@ class ModelClient:
             
             if not self.api_token:
                 raise ValueError(
-                    "OpenAI API key is required. Set OPENAI_API_KEY in .env or pass api_token parameter.\n"
-                    "Get your API key at: https://platform.openai.com/api-keys"
+                    "OpenAI API key is required. Set OPENAI_API_KEY in .env"
                 )
             
             self.client = OpenAI(api_key=self.api_token, timeout=self.timeout)
@@ -136,8 +123,7 @@ class ModelClient:
             
             if not self.api_token:
                 raise ValueError(
-                    "DeepSeek API key is required. Set API_TOKEN in .env or pass api_token parameter.\n"
-                    "Get your API key at: https://platform.deepseek.com"
+                    "DeepSeek API key is required. Set API_TOKEN in .env"
                 )
             
             # DeepSeek uses OpenAI-compatible API
@@ -161,7 +147,6 @@ class ModelClient:
         
         if not self.api_token:
             logger.warning("No Hugging Face API token provided. Requests may be rate-limited.")
-            logger.warning("Get a free token at: https://huggingface.co/settings/tokens")
         
         logger.info("Using Hugging Face Router API (OpenAI-compatible format)")
     

@@ -14,7 +14,7 @@ logger = get_logger(__name__)
 
 
 class ReportGenerator:
-    """Generates markdown reports for Velora Sync runs"""
+    """Generates Markdown reports for Velora Sync runs"""
     
     def __init__(self):
         """Initialize report generator"""
@@ -29,7 +29,7 @@ class ReportGenerator:
         warnings: List[str] = None
     ) -> str:
         """
-        Generate comprehensive markdown report
+        Generate comprehensive Markdown report
         
         Args:
             changes: List of detected changes
@@ -112,7 +112,7 @@ class ReportGenerator:
                 report_parts.append("## Warnings")
                 report_parts.append("")
                 for warning in warnings:
-                    report_parts.append(f"> ⚠️ {warning}")
+                    report_parts.append(f"> {warning}")
                 report_parts.append("")
             
             # Errors
@@ -120,15 +120,15 @@ class ReportGenerator:
                 report_parts.append("## Errors")
                 report_parts.append("")
                 for error in errors:
-                    report_parts.append(f"> ❌ {error}")
+                    report_parts.append(f"> {error}")
                 report_parts.append("")
             
             # Status
             if errors:
-                status = "❌ **FAILED**"
+                status = "**FAILED**"
                 status_msg = "The run completed with errors."
             elif warnings:
-                status = "⚠️ **COMPLETED WITH WARNINGS**"
+                status = "**COMPLETED WITH WARNINGS**"
                 status_msg = "The run completed successfully with some warnings."
             else:
                 status = "✅ **SUCCESS**"
@@ -186,7 +186,7 @@ class ReportGenerator:
             requirements_processed: Requirements processed count
             
         Returns:
-            GitHub Actions summary markdown
+            GitHub Actions summary Markdown
         """
         summary_parts = []
         
