@@ -26,17 +26,19 @@ class ReportGenerator:
         test_case_stats: Dict[str, int],
         requirements_processed: int,
         errors: List[str] = None,
-        warnings: List[str] = None
+        warnings: List[str] = None,
+        change_analysis: Any = None
     ) -> str:
         """
         Generate comprehensive Markdown report
         
         Args:
-            changes: List of detected changes
+            changes: List of detected changes (traditional mode)
             test_case_stats: Statistics from test case updates
             requirements_processed: Number of requirements processed
             errors: List of error messages
             warnings: List of warning messages
+            change_analysis: LLM change analysis result (intelligent mode)
             
         Returns:
             Markdown report string
@@ -66,41 +68,62 @@ class ReportGenerator:
             report_parts.append(f"- **Total Test Cases:** {test_case_stats.get('total', 0)}")
             report_parts.append("")
             
-            # Changes detected
-            if changes:
+            # Changes detected - check both traditional changes and LLM change_analysis
+            has_changes = bool(changes) or (change_analysis and change_analysis.has_changes)
+            
+            if has_changes:
                 report_parts.append("## Requirement Changes Detected")
                 report_parts.append("")
                 
-                added = [c for c in changes if c.change_type == 'added']
-                modified = [c for c in changes if c.change_type == 'modified']
-                removed = [c for c in changes if c.change_type == 'removed']
+                # If we have LLM change analysis (intelligent mode)
+                if change_analysis and change_analysis.has_changes:
+                    report_parts.append(f"**Summary:** {change_analysis.summary}")
+                    report_parts.append("")
+                    report_parts.append(f"- **Added:** {change_analysis.added_count}")
+                    report_parts.append(f"- **Modified:** {change_analysis.modified_count}")
+                    report_parts.append(f"- **Removed:** {change_analysis.removed_count}")
+                    report_parts.append("")
+                    
+                    # List individual changes
+                    if change_analysis.changes:
+                        report_parts.append("### Change Details")
+                        report_parts.append("")
+                        for change in change_analysis.changes:
+                            impact_badge = {"high": "[HIGH]", "medium": "[MED]", "low": "[LOW]"}.get(change.impact, "")
+                            report_parts.append(f"- {impact_badge} **{change.change_type.upper()}**: {change.description}")
+                        report_parts.append("")
                 
-                report_parts.append(f"- **Added:** {len(added)}")
-                report_parts.append(f"- **Modified:** {len(modified)}")
-                report_parts.append(f"- **Removed:** {len(removed)}")
-                report_parts.append("")
-                
-                # Details for each change type
-                if added:
-                    report_parts.append("### Added Requirements")
+                # If we have traditional changes
+                elif changes:
+                    added = [c for c in changes if c.change_type == 'added']
+                    modified = [c for c in changes if c.change_type == 'modified']
+                    removed = [c for c in changes if c.change_type == 'removed']
+                    
+                    report_parts.append(f"- **Added:** {len(added)}")
+                    report_parts.append(f"- **Modified:** {len(modified)}")
+                    report_parts.append(f"- **Removed:** {len(removed)}")
                     report_parts.append("")
-                    for change in added:
-                        report_parts.append(f"- **{change.requirement_id}**: {change.diff_summary}")
-                    report_parts.append("")
-                
-                if modified:
-                    report_parts.append("### Modified Requirements")
-                    report_parts.append("")
-                    for change in modified:
-                        report_parts.append(f"- **{change.requirement_id}**: {change.diff_summary}")
-                    report_parts.append("")
-                
-                if removed:
-                    report_parts.append("### Removed Requirements")
-                    report_parts.append("")
-                    for change in removed:
-                        report_parts.append(f"- **{change.requirement_id}**: {change.diff_summary}")
-                    report_parts.append("")
+                    
+                    if added:
+                        report_parts.append("### Added Requirements")
+                        report_parts.append("")
+                        for change in added:
+                            report_parts.append(f"- **{change.requirement_id}**: {change.diff_summary}")
+                        report_parts.append("")
+                    
+                    if modified:
+                        report_parts.append("### Modified Requirements")
+                        report_parts.append("")
+                        for change in modified:
+                            report_parts.append(f"- **{change.requirement_id}**: {change.diff_summary}")
+                        report_parts.append("")
+                    
+                    if removed:
+                        report_parts.append("### Removed Requirements")
+                        report_parts.append("")
+                        for change in removed:
+                            report_parts.append(f"- **{change.requirement_id}**: {change.diff_summary}")
+                        report_parts.append("")
             else:
                 report_parts.append("## No Changes Detected")
                 report_parts.append("")
