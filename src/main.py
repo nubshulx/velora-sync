@@ -179,65 +179,95 @@ def main() -> int:
             existing_test_cases = []
             logger.info("No existing test cases found (new file)")
         
-        # Step 2.5: Analyze document changes using LLM
+        # Step 2.5: Analyze document changes
         full_content = word_reader.read_document(config['SOURCE_DOCUMENT_PATH'])
         previous_content = None
         change_analysis = None
         
-        # Try to get previous content from cache
-        if hasattr(cache_manager, 'get_previous_document_content'):
-            previous_content = cache_manager.get_previous_document_content()
-        elif hasattr(cache_manager, 'get_requirements_content'):
-            previous_content = cache_manager.get_requirements_content()
+        # First, check if document has changed using hash (fast check)
+        has_hash_changed = cache_manager.has_requirements_changed(full_content)
         
-        if previous_content:
-            logger.info("Previous document version found in cache - analyzing changes...")
-            from src.core.llm_change_analyzer import LLMChangeAnalyzer
-            change_analyzer = LLMChangeAnalyzer(model_client)
-            change_analysis = change_analyzer.analyze_changes(
-                previous_content=previous_content,
-                current_content=full_content
+        if not has_hash_changed:
+            # Hash is identical - no need to call LLM, document hasn't changed at all
+            logger.info("Document hash unchanged - skipping change analysis")
+            from src.core.llm_change_analyzer import ChangeAnalysis
+            change_analysis = ChangeAnalysis(
+                has_changes=False,
+                summary="Document unchanged (hash match)"
             )
-            
-            # Log change analysis summary
-            if change_analysis.has_changes:
-                logger.info("=" * 60)
-                logger.info("DOCUMENT CHANGE ANALYSIS")
-                logger.info("=" * 60)
-                logger.info(f"Summary: {change_analysis.summary}")
-                logger.info(f"Changes: Added={change_analysis.added_count}, Modified={change_analysis.modified_count}, Removed={change_analysis.removed_count}")
-                for change in change_analysis.changes:
-                    impact_marker = {"high": "[HIGH]", "medium": "[MED]", "low": "[LOW]"}.get(change.impact, "")
-                    logger.info(f"  - {change.change_type.upper()} {impact_marker}: {change.description}")
-                logger.info("=" * 60)
-            else:
-                logger.info("No significant changes detected in requirements document")
         else:
-            logger.info("No previous document version in cache - treating all requirements as new")
+            # Hash changed - try to get previous content for semantic analysis
+            if hasattr(cache_manager, 'get_previous_document_content'):
+                previous_content = cache_manager.get_previous_document_content()
+            elif hasattr(cache_manager, 'get_requirements_content'):
+                previous_content = cache_manager.get_requirements_content()
+            
+            if previous_content:
+                logger.info("Document hash changed - analyzing changes using LLM...")
+                from src.core.llm_change_analyzer import LLMChangeAnalyzer
+                change_analyzer = LLMChangeAnalyzer(model_client)
+                change_analysis = change_analyzer.analyze_changes(
+                    previous_content=previous_content,
+                    current_content=full_content
+                )
+                
+                # Log change analysis summary
+                if change_analysis.has_changes:
+                    logger.info("=" * 60)
+                    logger.info("DOCUMENT CHANGE ANALYSIS")
+                    logger.info("=" * 60)
+                    logger.info(f"Summary: {change_analysis.summary}")
+                    logger.info(f"Changes: Added={change_analysis.added_count}, Modified={change_analysis.modified_count}, Removed={change_analysis.removed_count}")
+                    for change in change_analysis.changes:
+                        impact_marker = {"high": "[HIGH]", "medium": "[MED]", "low": "[LOW]"}.get(change.impact, "")
+                        logger.info(f"  - {change.change_type.upper()} {impact_marker}: {change.description}")
+                    logger.info("=" * 60)
+                else:
+                    logger.info("No significant changes detected in requirements document")
+            else:
+                logger.info("No previous document version in cache - treating all requirements as new")
         
         # Step 3: Process based on mode
         if config['UPDATE_MODE'] == 'intelligent':
-            logger.info("Step 3: Processing requirements intelligently")
-            
-            # Use intelligent orchestrator
-            processing_results = orchestrator.process_requirements_intelligently(
-                requirement_sections=requirements,
-                existing_test_cases=existing_test_cases,
-                mode='intelligent'
+            # Check if we should skip processing (no changes and test cases exist)
+            should_skip = (
+                change_analysis is not None and 
+                not change_analysis.has_changes and 
+                len(existing_test_cases) > 0
             )
             
-            # Get all test cases
-            all_test_cases = orchestrator.get_all_test_cases(processing_results)
-            
-            # Extract statistics
-            test_case_stats = {
-                'created': processing_results['statistics'].get('new_test_cases_created', 0),
-                'updated': processing_results['statistics'].get('test_cases_updated', 0),
-                'unchanged': processing_results['statistics'].get('test_cases_unchanged', 0),
-                'total': len(all_test_cases)
-            }
-            
-            changes = []  # Intelligent mode handles this internally
+            if should_skip:
+                logger.info("Step 3: Skipping processing (no changes detected and test cases exist)")
+                all_test_cases = existing_test_cases
+                test_case_stats = {
+                    'created': 0,
+                    'updated': 0,
+                    'unchanged': len(existing_test_cases),
+                    'total': len(existing_test_cases)
+                }
+                changes = []
+            else:
+                logger.info("Step 3: Processing requirements intelligently")
+                
+                # Use intelligent orchestrator
+                processing_results = orchestrator.process_requirements_intelligently(
+                    requirement_sections=requirements,
+                    existing_test_cases=existing_test_cases,
+                    mode='intelligent'
+                )
+                
+                # Get all test cases
+                all_test_cases = orchestrator.get_all_test_cases(processing_results)
+                
+                # Extract statistics
+                test_case_stats = {
+                    'created': processing_results['statistics'].get('new_test_cases_created', 0),
+                    'updated': processing_results['statistics'].get('test_cases_updated', 0),
+                    'unchanged': processing_results['statistics'].get('test_cases_unchanged', 0),
+                    'total': len(all_test_cases)
+                }
+                
+                changes = []  # Intelligent mode handles this internally
             
         else:
             # Traditional workflow
@@ -292,15 +322,20 @@ def main() -> int:
                 test_case_stats['total'] = len(existing_test_cases)
                 test_case_stats['unchanged'] = len(existing_test_cases)
         
-        # Step 6: Write test cases to Excel
-        logger.info("Step 6: Writing test cases to Excel")
-        final_stats = excel_handler.write_test_cases(
-            document_path=config['DESTINATION_DOCUMENT_PATH'],
-            test_cases=all_test_cases,
-            mode=config['UPDATE_MODE'] if config['UPDATE_MODE'] != 'intelligent' else 'new_only'
-        )
+        # Step 6: Write test cases to Excel (skip if no changes)
+        has_test_case_changes = test_case_stats.get('created', 0) > 0 or test_case_stats.get('updated', 0) > 0
         
-        logger.info(f"Test cases written: {final_stats}")
+        if has_test_case_changes:
+            logger.info("Step 6: Writing test cases to Excel")
+            final_stats = excel_handler.write_test_cases(
+                document_path=config['DESTINATION_DOCUMENT_PATH'],
+                test_cases=all_test_cases,
+                mode=config['UPDATE_MODE'] if config['UPDATE_MODE'] != 'intelligent' else 'new_only'
+            )
+            logger.info(f"Test cases written: {final_stats}")
+        else:
+            logger.info("Step 6: Skipped (no changes to write)")
+            final_stats = test_case_stats
         
         # Update cache with current document content
         logger.info("Updating document cache...")

@@ -1,5 +1,5 @@
 """
-Configuration management for Velora Sync
+Configuration management
 """
 
 import os
@@ -15,7 +15,7 @@ logger = get_logger(__name__)
 
 
 class Config:
-    """Configuration manager for Velora Sync"""
+    """Configuration manager"""
     
     # Required configuration keys
     REQUIRED_KEYS = [
