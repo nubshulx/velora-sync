@@ -357,7 +357,7 @@ def main() -> int:
         
         report = report_generator.generate_report(
             changes=changes,
-            test_case_stats=test_case_stats,
+            test_case_stats=final_stats,
             requirements_processed=requirements_processed,
             errors=errors,
             warnings=warnings,
