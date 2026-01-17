@@ -253,7 +253,8 @@ def main() -> int:
                 processing_results = orchestrator.process_requirements_intelligently(
                     requirement_sections=requirements,
                     existing_test_cases=existing_test_cases,
-                    mode='intelligent'
+                    mode='intelligent',
+                    change_analysis=change_analysis
                 )
                 
                 # Get all test cases
@@ -357,7 +358,7 @@ def main() -> int:
         
         report = report_generator.generate_report(
             changes=changes,
-            test_case_stats=test_case_stats,
+            test_case_stats=final_stats,
             requirements_processed=requirements_processed,
             errors=errors,
             warnings=warnings,

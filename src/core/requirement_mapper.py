@@ -27,7 +27,8 @@ class RequirementMapper:
     def map_requirements_to_test_cases(
         self,
         requirement_sections: List[Dict[str, str]],
-        existing_test_cases: List[Dict[str, Any]]
+        existing_test_cases: List[Dict[str, Any]],
+        added_descriptions: List[str] = None
     ) -> Dict[str, Any]:
         """
         Intelligently map requirement sections to existing test cases
@@ -35,11 +36,15 @@ class RequirementMapper:
         Args:
             requirement_sections: List of requirement dictionaries
             existing_test_cases: List of existing test case dictionaries
+            added_descriptions: List of descriptions for newly added requirements from change analysis
             
         Returns:
             Mapping result with coverage analysis and recommendations
         """
         logger.info(f"Mapping {len(requirement_sections)} requirements to {len(existing_test_cases)} test cases")
+        
+        if added_descriptions:
+            logger.info(f"Will force 'none' coverage for {len(added_descriptions)} newly added requirements")
         
         mapping_results = {
             'mappings': [],  # List of {requirement, matched_test_cases, coverage_status}
@@ -53,7 +58,8 @@ class RequirementMapper:
         for req_section in requirement_sections:
             mapping = self._analyze_requirement_coverage(
                 requirement=req_section,
-                existing_test_cases=existing_test_cases
+                existing_test_cases=existing_test_cases,
+                added_descriptions=added_descriptions or []
             )
             mapping_results['mappings'].append(mapping)
             
@@ -92,7 +98,8 @@ class RequirementMapper:
     def _analyze_requirement_coverage(
         self,
         requirement: Dict[str, str],
-        existing_test_cases: List[Dict[str, Any]]
+        existing_test_cases: List[Dict[str, Any]],
+        added_descriptions: List[str] = None
     ) -> Dict[str, Any]:
         """
         Analyze how well a requirement is covered by existing test cases (no LLM calls)
@@ -100,10 +107,41 @@ class RequirementMapper:
         Args:
             requirement: Requirement dictionary
             existing_test_cases: List of test cases
+            added_descriptions: List of descriptions for newly added requirements
             
         Returns:
             Coverage analysis result
         """
+        req_content = requirement.get('content', '').lower()
+        req_title = requirement.get('title', '').lower()
+        
+        # Check if this requirement matches an added requirement from change analysis
+        is_newly_added = False
+        if added_descriptions:
+            for desc in added_descriptions:
+                # Check for significant keyword overlap with the added description
+                desc_keywords = self._extract_keywords(desc)
+                req_keywords_check = self._extract_keywords(req_content) | self._extract_keywords(req_title)
+                
+                if desc_keywords and req_keywords_check:
+                    similarity = self._jaccard_similarity(desc_keywords, req_keywords_check)
+                    if similarity >= 0.3:  # 30% overlap indicates this is the added requirement
+                        is_newly_added = True
+                        logger.info(f"Requirement '{req_title[:50]}...' matches added description - forcing 'none' coverage")
+                        break
+        
+        # If newly added, skip keyword matching and force 'none' coverage
+        if is_newly_added:
+            return {
+                'requirement': requirement,
+                'matched_test_cases': [],
+                'coverage_status': 'none',
+                'coverage_percentage': 0,
+                'missing_scenarios': [],
+                'update_needed': False,
+                'update_reason': 'Newly added requirement from change analysis'
+            }
+        
         # Use keyword-based heuristic (fast, no API calls)
         req_keywords = self._extract_keywords(requirement.get('content', ''))
         req_keywords |= self._extract_keywords(requirement.get('title', ''))
