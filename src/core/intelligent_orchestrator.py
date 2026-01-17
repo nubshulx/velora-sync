@@ -38,7 +38,8 @@ class IntelligentTestCaseOrchestrator:
         self,
         requirement_sections: List[Dict[str, str]],
         existing_test_cases: List[Dict[str, Any]],
-        mode: str = 'intelligent'
+        mode: str = 'intelligent',
+        change_analysis: Any = None
     ) -> Dict[str, Any]:
         """
         Process requirements with intelligent mapping to existing test cases
@@ -47,11 +48,22 @@ class IntelligentTestCaseOrchestrator:
             requirement_sections: List of requirement dictionaries
             existing_test_cases: List of existing test cases
             mode: Processing mode ('intelligent', 'new_only', 'full_sync')
+            change_analysis: Optional LLM change analysis result
             
         Returns:
             Processing results with new/updated test cases and statistics
         """
         logger.info(f"Processing {len(requirement_sections)} requirements in {mode} mode")
+        
+        # Extract added requirement descriptions from change analysis
+        added_descriptions = []
+        if change_analysis and hasattr(change_analysis, 'has_changes') and change_analysis.has_changes:
+            for change in getattr(change_analysis, 'changes', []):
+                if hasattr(change, 'change_type') and change.change_type.lower() == 'added':
+                    if hasattr(change, 'description'):
+                        added_descriptions.append(change.description.lower())
+            if added_descriptions:
+                logger.info(f"Found {len(added_descriptions)} added requirement(s) from change analysis")
         
         results = {
             'new_test_cases': [],
@@ -66,7 +78,8 @@ class IntelligentTestCaseOrchestrator:
             logger.info("Step 1: Analyzing requirement coverage...")
             mapping_results = self.requirement_mapper.map_requirements_to_test_cases(
                 requirement_sections=requirement_sections,
-                existing_test_cases=existing_test_cases
+                existing_test_cases=existing_test_cases,
+                added_descriptions=added_descriptions
             )
             results['mapping_analysis'] = mapping_results
             

@@ -253,7 +253,8 @@ def main() -> int:
                 processing_results = orchestrator.process_requirements_intelligently(
                     requirement_sections=requirements,
                     existing_test_cases=existing_test_cases,
-                    mode='intelligent'
+                    mode='intelligent',
+                    change_analysis=change_analysis
                 )
                 
                 # Get all test cases
